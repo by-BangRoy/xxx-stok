@@ -43,7 +43,8 @@ function DashboardView() {
     resetDemoData,
     createProduct,
     refreshData,
-    isRefreshing
+    isRefreshing,
+    addNotificationToast
   } = useInventory();
 
   // Real-time stock warnings calculation
@@ -181,15 +182,39 @@ function DashboardView() {
       const text = await file.text();
       const parsed = parseInventoryCSV(text);
       if (parsed.length === 0) {
-        alert('Format CSV tidak terbaca. Pastikan ada kolom Nama Barang/Pakaian, Warna, Ukuran, dan Stok.');
+        addNotificationToast({
+          title: 'Format CSV Tidak Terbaca',
+          message: 'Pastikan file CSV memiliki kolom Nama Barang/Pakaian, Warna, Ukuran, dan Stok.',
+          type: 'danger',
+          deviceName: 'Sistem CSV',
+          operatorName: 'Impor',
+          isRemote: false,
+          productName: 'Impor CSV'
+        });
         return;
       }
       for (const p of parsed) {
         await createProduct(p);
       }
-      alert(`Berhasil mengimpor ${parsed.length} model barang ke dalam katalog!`);
+      addNotificationToast({
+        title: '✓ Berhasil Mengimpor CSV',
+        message: `Berhasil menambahkan ${parsed.length} model barang ke dalam katalog stok!`,
+        type: 'restock',
+        deviceName: 'Sistem CSV',
+        operatorName: 'Impor',
+        isRemote: false,
+        productName: 'Katalog Stok'
+      });
     } catch (err: any) {
-      alert(`Gagal mengimpor file: ${err.message}`);
+      addNotificationToast({
+        title: 'Gagal Mengimpor CSV',
+        message: err?.message || 'Terjadi kesalahan saat memproses file.',
+        type: 'danger',
+        deviceName: 'Sistem CSV',
+        operatorName: 'Impor',
+        isRemote: false,
+        productName: 'Impor CSV'
+      });
     } finally {
       setIsImporting(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -408,8 +433,8 @@ function DashboardView() {
               <button
                 onClick={handleExportCSV}
                 disabled={products.length === 0}
+                title="Unduh File CSV (Kompatibel Excel, Google Sheets, WPS)"
                 className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 active:from-amber-600 active:to-amber-700 disabled:opacity-40 disabled:pointer-events-none text-slate-950 rounded-xl text-xs font-extrabold transition-all shadow-sm active:scale-95 shrink-0"
-                title="Unduh File CSV Rapi (Kompatibel Excel, Google Sheets, WPS)"
               >
                 <Download className="w-3.5 h-3.5" />
                 <span>Ekspor CSV</span>

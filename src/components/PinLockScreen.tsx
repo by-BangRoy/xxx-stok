@@ -100,7 +100,7 @@ export const PinLockScreen: React.FC = () => {
           {settings.profile.storeName || 'STZ Stok'}
         </h1>
         <p className="text-xs text-amber-300/90 text-center mt-0.5 mb-4 font-medium">
-          Sistem Rekap Stok Real-Time Terproteksi
+          System Rekap Barang Keluar / Masuk
         </p>
 
         {/* Lock Icon & Instructions */}

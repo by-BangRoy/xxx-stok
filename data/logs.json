@@ -1,1 +1,18 @@
-[]
+[
+  {
+    "id": "log-1792848335487-wu4ly",
+    "timestamp": "2026-10-24T13:25:35.487Z",
+    "productId": "prod-stz-1",
+    "productName": "KUREA",
+    "variantId": "var-prod-stz-1-1",
+    "variantDescription": "M / HITAM",
+    "changeType": "adjustment",
+    "delta": 0,
+    "previousStock": 20,
+    "newStock": 20,
+    "reason": "Cek koneksi real-time",
+    "deviceId": "test-device",
+    "deviceName": "Perangkat Uji",
+    "operatorName": "Admin Uji"
+  }
+]

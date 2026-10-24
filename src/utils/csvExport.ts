@@ -107,7 +107,7 @@ export function exportInventoryToCSV(products: Product[], storeName: string = 'S
   const link = document.createElement('a');
 
   const cleanStoreName = (storeName || 'STZstok').trim().replace(/[^a-zA-Z0-9]/g, '_');
-  const filename = `Stok_Inventaris_${cleanStoreName}_${fileDateTimeStr}_RAPI.csv`;
+  const filename = `Stok_Inventaris_${cleanStoreName}_${fileDateTimeStr}.csv`;
 
   link.setAttribute('href', url);
   link.setAttribute('download', filename);
@@ -135,7 +135,7 @@ export function exportInventoryToCSV(products: Product[], storeName: string = 'S
  */
 export function exportAuditLogsToCSV(logs: StockLog[]) {
   if (!logs || logs.length === 0) {
-    alert('Belum ada catatan aktivitas riwayat stok.');
+    console.warn('Belum ada catatan aktivitas riwayat stok.');
     return;
   }
 
@@ -204,7 +204,7 @@ export function exportAuditLogsToCSV(logs: StockLog[]) {
   const link = document.createElement('a');
 
   link.setAttribute('href', url);
-  link.setAttribute('download', `Riwayat_Aktivitas_STZstok_${fileDateTimeStr}_RAPI.csv`);
+  link.setAttribute('download', `Riwayat_Aktivitas_STZstok_${fileDateTimeStr}.csv`);
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);

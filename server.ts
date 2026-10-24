@@ -225,11 +225,11 @@ app.get('/api/inventory', (req, res) => {
   });
 });
 
-// Restore/Sync backup from client to prevent losing user-inputted items
+// Restore/Sync backup from client only if server is empty
 app.post('/api/inventory/sync-backup', (req, res) => {
-  const { clientProducts } = req.body;
+  const { clientProducts } = req.body || {};
   if (Array.isArray(clientProducts) && clientProducts.length > 0) {
-    if (products.length === 0 || clientProducts.length > products.length) {
+    if (products.length === 0) {
       products = clientProducts;
       saveInventory();
       broadcast({
@@ -248,27 +248,36 @@ app.post('/api/inventory/sync-backup', (req, res) => {
 
 // Save and synchronize CSV snapshot on server storage matching download time
 app.post('/api/inventory/save-csv', (req, res) => {
-  const { csvContent, filename } = req.body;
+  const { csvContent, filename, downloadTime } = req.body || {};
   if (!csvContent) {
     return res.status(400).json({ error: 'Data CSV kosong' });
   }
   try {
     const csvDir = path.join(__dirname, 'data');
+    const exportsDir = path.join(csvDir, 'exports');
     if (!fs.existsSync(csvDir)) {
       fs.mkdirSync(csvDir, { recursive: true });
     }
+    if (!fs.existsSync(exportsDir)) {
+      fs.mkdirSync(exportsDir, { recursive: true });
+    }
     // Save latest CSV
     fs.writeFileSync(path.join(csvDir, 'inventory_latest.csv'), csvContent, 'utf-8');
-    if (filename) {
-      fs.writeFileSync(path.join(csvDir, filename), csvContent, 'utf-8');
-    }
-    // Also update public/assets/aistudio if folder exists
-    const publicAssetDir = path.join(__dirname, 'public', 'assets', 'aistudio');
-    if (fs.existsSync(publicAssetDir)) {
-      fs.writeFileSync(path.join(publicAssetDir, 'Stok_Inventaris_STZstok_latest.csv'), csvContent, 'utf-8');
-    }
-    console.log(`[CSV Sync] Server storage updated with latest CSV download: ${filename || 'inventory_latest.csv'}`);
-    return res.json({ success: true, saved: true, filename });
+    const safeFilename = filename ? path.basename(filename) : `stok_${Date.now()}.csv`;
+    fs.writeFileSync(path.join(exportsDir, safeFilename), csvContent, 'utf-8');
+
+    // Keep metadata
+    const metaPath = path.join(csvDir, 'last_csv_export.json');
+    fs.writeFileSync(metaPath, JSON.stringify({
+      filename: safeFilename,
+      downloadTime: downloadTime || new Date().toISOString(),
+      timestamp: new Date().toISOString(),
+      productsCount: products.length,
+      totalUnits: products.reduce((acc, p) => acc + p.totalStock, 0),
+    }, null, 2), 'utf-8');
+
+    console.log(`[CSV Sync] Server storage updated with latest CSV download: ${safeFilename}`);
+    return res.json({ success: true, saved: true, filename: safeFilename });
   } catch (err: any) {
     console.error('Failed to save CSV to server storage:', err);
     return res.status(500).json({ error: 'Gagal menyimpan file CSV di server', details: err?.message });
@@ -624,59 +633,6 @@ app.put('/api/products/:id', (req, res) => {
   return res.json({ success: true, product: updatedProduct, log });
 });
 
-// Save downloaded CSV to server storage and keep synchronized with download time
-app.post('/api/inventory/save-csv', (req, res) => {
-  try {
-    const { csvContent, filename, downloadTime } = req.body || {};
-    if (!csvContent) {
-      return res.status(400).json({ error: 'Data CSV kosong' });
-    }
-
-    const exportsDir = path.join(DATA_DIR, 'exports');
-    if (!fs.existsSync(exportsDir)) {
-      fs.mkdirSync(exportsDir, { recursive: true });
-    }
-
-    // Save exact timestamped file and latest reference file
-    const safeFilename = filename ? path.basename(filename) : `stok_${Date.now()}.csv`;
-    const targetPath = path.join(exportsDir, safeFilename);
-    const latestPath = path.join(DATA_DIR, 'latest_stok.csv');
-
-    fs.writeFileSync(targetPath, csvContent, 'utf-8');
-    fs.writeFileSync(latestPath, csvContent, 'utf-8');
-
-    // Keep metadata of last CSV export
-    const metaPath = path.join(DATA_DIR, 'last_csv_export.json');
-    fs.writeFileSync(metaPath, JSON.stringify({
-      filename: safeFilename,
-      downloadTime: downloadTime || new Date().toISOString(),
-      timestamp: new Date().toISOString(),
-      productsCount: products.length,
-      totalUnits: products.reduce((acc, p) => acc + p.totalStock, 0),
-    }, null, 2), 'utf-8');
-
-    return res.json({ success: true, filename: safeFilename, downloadTime });
-  } catch (err: any) {
-    console.error('Error saving CSV to server:', err);
-    return res.status(500).json({ error: 'Gagal menyimpan file CSV di server' });
-  }
-});
-
-// Sync backup endpoint (preserves catalog if client has state)
-app.post('/api/inventory/sync-backup', (req, res) => {
-  try {
-    const { clientProducts } = req.body || {};
-    if (products.length === 0 && Array.isArray(clientProducts) && clientProducts.length > 0) {
-      products = clientProducts;
-      saveInventory();
-      return res.json({ success: true, restored: true, count: products.length });
-    }
-    return res.json({ success: true, count: products.length });
-  } catch (err: any) {
-    return res.status(500).json({ error: err.message });
-  }
-});
-
 // Delete product
 app.delete('/api/products/:id', (req, res) => {
   const { id } = req.params;
@@ -696,7 +652,7 @@ app.delete('/api/products/:id', (req, res) => {
     meta: { deviceId, deviceName, operatorName, timestamp: new Date().toISOString() },
   });
 
-  return res.json({ success: true, removedId: id });
+  return res.json({ success: true, removedId: id, productName: removed.name });
 });
 
 // Settings endpoints

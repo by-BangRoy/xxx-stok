@@ -1043,12 +1043,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </button>
               </div>
 
-              {/* EKSPOR STOK CSV RAPI (EXCEL) */}
+              {/* EKSPOR STOK CSV (EXCEL) */}
               <div className="p-5 rounded-2xl bg-amber-50/70 border border-amber-300 flex items-center justify-between">
                 <div>
-                  <h4 className="text-xs font-bold text-amber-950">Ekspor Rekap Stok (.CSV Excel Rapi)</h4>
+                  <h4 className="text-xs font-bold text-amber-950">Ekspor Rekap Stok (.CSV Excel)</h4>
                   <p className="text-xs text-amber-900/80 mt-0.5">
-                    Unduh file CSV dengan format kolom rapi (No, Nama Barang, Kategori, Warna, Ukuran, Stok Pcs, Lusin, Batas Min, Status Stok).
+                    Unduh file CSV format kolom terstruktur (No, Nama Barang, Kategori, Warna, Ukuran, Stok Pcs, Lusin, Batas Min, Status Stok).
                   </p>
                 </div>
                 <button

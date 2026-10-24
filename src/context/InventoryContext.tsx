@@ -65,6 +65,7 @@ interface InventoryContextType {
   deleteProduct: (id: string) => Promise<boolean>;
   dismissToast: (id: string) => void;
   clearAllToasts: () => void;
+  addNotificationToast: (toast: Omit<RealtimeToast, 'id' | 'timestamp'>) => void;
   resetDemoData: () => Promise<void>;
   simulateRemoteChange: (scenario?: 'sale' | 'restock' | 'critical') => Promise<void>;
   isRefreshing: boolean;
@@ -309,9 +310,15 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       ]);
       if (resInv.ok) {
         const invData = await resInv.json();
-        const incoming: Product[] = invData.products || [];
-        if (incoming.length > 0) {
+        if (Array.isArray(invData.products)) {
+          const incoming: Product[] = invData.products;
           setProducts(prev => {
+            if (incoming.length === 0) {
+              if (typeof window !== 'undefined') {
+                localStorage.removeItem('stz_saved_products');
+              }
+              return [];
+            }
             const changed =
               prev.length !== incoming.length ||
               prev.some((p) => {
@@ -352,20 +359,6 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
               return mapped;
             }
             return prev;
-          });
-        } else {
-          // If server ever returns empty array, DO NOT wipe existing products!
-          // Restore server with local cache or fallback so stock is preserved.
-          setProducts(prev => {
-            if (prev.length > 0) {
-              fetch('/api/inventory/sync-backup', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ clientProducts: prev }),
-              }).catch(() => {});
-              return prev;
-            }
-            return INITIAL_PRODUCTS;
           });
         }
       }
@@ -414,7 +407,10 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     if (typeof window === 'undefined') return;
 
     if (socketRef.current) {
+      socketRef.current.onclose = null;
+      socketRef.current.onerror = null;
       socketRef.current.close();
+      socketRef.current = null;
     }
 
     setConnectionStatus('connecting');
@@ -476,7 +472,9 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
       ws.onerror = (err) => {
         console.warn('WebSocket connection error:', err);
-        ws.close();
+        try {
+          ws.close();
+        } catch {}
       };
     } catch (err) {
       console.error('Failed to construct WebSocket:', err);
@@ -492,11 +490,15 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     switch (msg.type) {
       case 'INIT': {
-        if (msg.payload?.products && Array.isArray(msg.payload.products) && msg.payload.products.length > 0) {
+        if (msg.payload?.products && Array.isArray(msg.payload.products)) {
           setProducts(msg.payload.products);
           if (typeof window !== 'undefined') {
             try {
-              localStorage.setItem('stz_saved_products', JSON.stringify(msg.payload.products));
+              if (msg.payload.products.length > 0) {
+                localStorage.setItem('stz_saved_products', JSON.stringify(msg.payload.products));
+              } else {
+                localStorage.removeItem('stz_saved_products');
+              }
             } catch (e) {}
           }
         }
@@ -851,10 +853,20 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       } catch (e) {}
     }
 
-    // Fallback sync polling every 1.8s ensures data stays 100% synchronized across all devices
-    const pollInterval = setInterval(() => {
+    // Resilient fallback sync:
+    // When WebSocket is connected, updates arrive in real-time instantly (<10ms).
+    // If WebSocket is ever temporarily disconnected or reconnecting, poll every 3.5s as safety net.
+    // A gentle background sync every 25s maintains sanity without lag or battery drain on phones.
+    const fallbackPollInterval = setInterval(() => {
+      const isWsOpen = socketRef.current && socketRef.current.readyState === WebSocket.OPEN;
+      if (!isWsOpen) {
+        refreshData();
+      }
+    }, 3500);
+
+    const gentleSanitySync = setInterval(() => {
       refreshData();
-    }, 1800);
+    }, 25000);
 
     // Auto-reconnect & resync immediately when user wakes up screen, unlocks phone, or refocuses tab
     const handleWakeOrFocus = () => {
@@ -882,7 +894,8 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     return () => {
       if (bc) bc.close();
-      clearInterval(pollInterval);
+      clearInterval(fallbackPollInterval);
+      clearInterval(gentleSanitySync);
       document.removeEventListener('visibilitychange', handleWakeOrFocus);
       window.removeEventListener('focus', handleWakeOrFocus);
       window.removeEventListener('online', handleWakeOrFocus);
@@ -1451,6 +1464,7 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         deleteProduct,
         dismissToast,
         clearAllToasts,
+        addNotificationToast,
         resetDemoData,
         simulateRemoteChange,
         isRefreshing,

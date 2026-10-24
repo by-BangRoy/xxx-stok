@@ -33,34 +33,38 @@ export const StockOpnameModal: React.FC<StockOpnameModalProps> = ({ isOpen, onCl
   const [search, setSearch] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Lock body scroll when modal is open
+  const [statusMsg, setStatusMsg] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
+
+  // Lock body scroll when modal is open and sync entries
   useEffect(() => {
     if (isOpen) {
       const originalStyle = window.getComputedStyle(document.body).overflow;
       document.body.style.overflow = 'hidden';
+      
+      const list: OpnameEntry[] = [];
+      products.forEach((p) => {
+        p.variants.forEach((v) => {
+          list.push({
+            productId: p.id,
+            productName: p.name,
+            variantId: v.id,
+            variantDesc: `${v.size} • ${v.color}`,
+            systemStock: v.stock,
+            actualStock: v.stock,
+          });
+        });
+      });
+      setEntries(list);
+      setStatusMsg(null);
+
       return () => {
         document.body.style.overflow = originalStyle;
       };
     }
-  }, [isOpen]);
+  }, [isOpen, products]);
 
-  // Initialize opname state from all products & variants
-  const [entries, setEntries] = useState<OpnameEntry[]>(() => {
-    const list: OpnameEntry[] = [];
-    products.forEach((p) => {
-      p.variants.forEach((v) => {
-        list.push({
-          productId: p.id,
-          productName: p.name,
-          variantId: v.id,
-          variantDesc: `${v.size} • ${v.color}`,
-          systemStock: v.stock,
-          actualStock: v.stock, // Default to system stock
-        });
-      });
-    });
-    return list;
-  });
+  // Initial opname state from all products & variants
+  const [entries, setEntries] = useState<OpnameEntry[]>([]);
 
   if (!isOpen) return null;
 
@@ -80,11 +84,12 @@ export const StockOpnameModal: React.FC<StockOpnameModalProps> = ({ isOpen, onCl
 
   const handleSaveOpname = async () => {
     if (changedEntries.length === 0) {
-      alert('Tidak ada perbedaan stok yang diubah');
+      setStatusMsg({ type: 'info', text: 'Tidak ada perubahan stok fisik.' });
       return;
     }
 
     setIsSubmitting(true);
+    setStatusMsg(null);
     const batchItems = changedEntries.map((e) => ({
       productId: e.productId,
       variantId: e.variantId,
@@ -97,8 +102,18 @@ export const StockOpnameModal: React.FC<StockOpnameModalProps> = ({ isOpen, onCl
     setIsSubmitting(false);
 
     if (success) {
-      alert(`Berhasil memperbarui ${changedEntries.length} varian stok opname! Semua perangkat telah disinkronkan.`);
-      onClose();
+      setStatusMsg({
+        type: 'success',
+        text: `Berhasil memperbarui ${changedEntries.length} varian stok opname! Semua perangkat telah disinkronkan.`,
+      });
+      setTimeout(() => {
+        onClose();
+      }, 1200);
+    } else {
+      setStatusMsg({
+        type: 'error',
+        text: 'Gagal memperbarui stok ke server. Silakan coba lagi.',
+      });
     }
   };
 
@@ -128,6 +143,20 @@ export const StockOpnameModal: React.FC<StockOpnameModalProps> = ({ isOpen, onCl
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {/* Status Notification Message */}
+        {statusMsg && (
+          <div className={`px-4 py-2 text-xs font-semibold flex items-center gap-2 ${
+            statusMsg.type === 'success'
+              ? 'bg-emerald-50 text-emerald-800 border-b border-emerald-200'
+              : statusMsg.type === 'error'
+              ? 'bg-rose-50 text-rose-800 border-b border-rose-200'
+              : 'bg-amber-50 text-amber-800 border-b border-amber-200'
+          }`}>
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            <span>{statusMsg.text}</span>
+          </div>
+        )}
 
         {/* Search & Stats Bar */}
         <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3">

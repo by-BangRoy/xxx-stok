@@ -42,7 +42,8 @@ export const DeviceManagerModal: React.FC<DeviceManagerModalProps> = ({
     connectedDevices, 
     connectionStatus, 
     currentDevice, 
-    updateDeviceProfile
+    updateDeviceProfile,
+    settings
   } = useInventory();
 
   const [activeTab, setActiveTab] = useState<'devices' | 'connect' | 'identity'>(initialTab);
@@ -91,8 +92,21 @@ export const DeviceManagerModal: React.FC<DeviceManagerModalProps> = ({
 
   if (!isOpen) return null;
 
-  const currentUrl = typeof window !== 'undefined' ? window.location.href : 'https://stz-fashion-stok.ai.studio';
-  const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(currentUrl)}`;
+  // Determine clean public base URL for other devices / QR Code
+  const getCleanAppUrl = (): string => {
+    if (typeof window === 'undefined') return 'https://stz-fashion-stok.ai.studio';
+    try {
+      if (window.location.origin && window.location.origin !== 'null') {
+        return `${window.location.origin}${window.location.pathname}`;
+      }
+      return window.location.href;
+    } catch {
+      return window.location.href || 'https://stz-fashion-stok.ai.studio';
+    }
+  };
+
+  const currentUrl = getCleanAppUrl();
+  const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(currentUrl)}`;
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
@@ -127,12 +141,26 @@ export const DeviceManagerModal: React.FC<DeviceManagerModalProps> = ({
   };
 
   const handleShareWhatsApp = () => {
-    const text = `Halo, berikut tautan sistem inventaris STZ Stok:\n${currentUrl}\n\nSilakan buka di HP untuk mulai mencatat stok barang keluar & masuk secara real-time.`;
-    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
+    const store = settings.profile.storeName || 'STZ Stok';
+    const text = `Halo, berikut tautan sistem inventaris ${store}:\n${currentUrl}\n\nSilakan buka di HP untuk mulai mencatat stok barang keluar & masuk secara real-time.`;
+    const targetUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
+    const link = document.createElement('a');
+    link.href = targetUrl;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const handleOpenNewTab = () => {
-    window.open(currentUrl, '_blank');
+    const link = document.createElement('a');
+    link.href = currentUrl;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   // Helper to determine device icon and badge

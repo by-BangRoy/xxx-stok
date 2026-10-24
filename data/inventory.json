@@ -599,11 +599,11 @@
     ],
     "totalStock": 2016,
     "createdAt": "2026-10-24T12:01:21.369Z",
-    "updatedAt": "2026-10-24T12:01:21.370Z",
+    "updatedAt": "2026-10-24T13:25:35.487Z",
     "lastUpdatedBy": {
-      "deviceId": "system-import",
-      "deviceName": "Import Master STZ FASHION",
-      "operatorName": "Admin Toko"
+      "deviceId": "test-device",
+      "deviceName": "Perangkat Uji",
+      "operatorName": "Admin Uji"
     }
   },
   {
