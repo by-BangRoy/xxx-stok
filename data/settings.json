@@ -1,0 +1,17 @@
+{
+  "securityPin": "000000",
+  "pinRequired": true,
+  "autoLockMinutes": 0,
+  "soundEnabled": true,
+  "defaultMinStockAlert": 3,
+  "enableStockNotifications": true,
+  "profile": {
+    "storeName": "",
+    "storeBranch": "",
+    "tagline": "",
+    "phone": "",
+    "address": "",
+    "ownerName": "",
+    "socialMedia": ""
+  }
+}
