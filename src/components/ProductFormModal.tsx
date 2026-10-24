@@ -26,8 +26,9 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   const isEdit = Boolean(product);
 
   const [name, setName] = useState(product?.name || '');
-  // Kategori dikosongkan secara default agar pengguna bisa input manual
   const [category, setCategory] = useState(product?.category || '');
+  const [sku, setSku] = useState(product?.sku || '');
+  const [location, setLocation] = useState(product?.location || '');
   const [imageUrl, setImageUrl] = useState(product?.imageUrl || DEFAULT_IMAGE);
   const cleanInitialDesc = product?.description && /di+mport\s+dari\s+file\s+rekap\s+stok\s+csv/i.test(product.description)
     ? ''
@@ -52,6 +53,62 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   );
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Re-sync all form fields whenever product prop changes or modal opens
+  useEffect(() => {
+    if (isOpen) {
+      if (product) {
+        setName(product.name || '');
+        setCategory(product.category || '');
+        setSku(product.sku || '');
+        setLocation(product.location || '');
+        setImageUrl(product.imageUrl || DEFAULT_IMAGE);
+        const cleanDesc = product.description && /di+mport\s+dari\s+file\s+rekap\s+stok\s+csv/i.test(product.description)
+          ? ''
+          : (product.description || '');
+        setDescription(cleanDesc);
+        setVariants(
+          product.variants && product.variants.length > 0
+            ? product.variants.map((v) => ({ ...v }))
+            : [
+                {
+                  id: `var-new-1`,
+                  sku: '',
+                  size: 'All Size',
+                  color: 'Standar',
+                  colorHex: '#CBD5E1',
+                  stock: 0,
+                  minStock: 2,
+                  price: 0,
+                  costPrice: 0,
+                  barcode: '',
+                },
+              ]
+        );
+      } else {
+        setName('');
+        setCategory('');
+        setSku('');
+        setLocation('');
+        setImageUrl(DEFAULT_IMAGE);
+        setDescription('');
+        setVariants([
+          {
+            id: `var-new-1`,
+            sku: '',
+            size: 'All Size',
+            color: 'Standar',
+            colorHex: '#CBD5E1',
+            stock: 0,
+            minStock: 2,
+            price: 0,
+            costPrice: 0,
+            barcode: '',
+          },
+        ]);
+      }
+    }
+  }, [product, isOpen]);
 
   // Lock body scroll on mobile and desktop when modal is open
   useEffect(() => {
@@ -118,9 +175,9 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
 
     const productPayload = {
       name: name.trim(),
-      sku: product?.sku || '',
+      sku: sku.trim(),
       category: category.trim() || 'Umum',
-      location: product?.location || '',
+      location: location.trim(),
       imageUrl: imageUrl.trim() || DEFAULT_IMAGE,
       description: description.trim(),
       variants: sanitizedVariants,
@@ -183,7 +240,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="p-4 sm:p-6 overflow-y-auto space-y-5 flex-1">
           {/* Basic Details: Nama Barang & Kategori */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+          <div className="space-y-3.5">
             <div>
               <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                 Nama Barang *
@@ -193,20 +250,80 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                 required
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Contoh: Kemeja Polos Premium"
-                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                placeholder="Contoh: STZ - GAMIS ABAYA HITAM MEWAH"
+                className="w-full px-3 py-2 text-sm font-bold border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                Kategori
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  Kategori
+                </label>
+                <span className="text-[10px] text-slate-500">Pilih cepat atau ketik sendiri</span>
+              </div>
+              <div className="flex flex-wrap gap-1 mb-1.5">
+                {['Gamis', 'Tunik', 'Dress', 'Kemeja', 'Setelan', 'Celana', 'Rok', 'Hijab', 'Kaos', 'Mukena'].map((cat) => (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => setCategory(cat)}
+                    className={`text-[11px] px-2 py-0.5 rounded-lg font-bold transition-all border ${
+                      category.toLowerCase() === cat.toLowerCase()
+                        ? 'bg-amber-500 text-slate-950 border-amber-600 font-black'
+                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200'
+                    }`}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
               <input
                 type="text"
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
-                placeholder="Input manual kategori..."
+                placeholder="Input kategori barang..."
+                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  Kode Barang / SKU
+                </label>
+                <input
+                  type="text"
+                  value={sku}
+                  onChange={(e) => setSku(e.target.value)}
+                  placeholder="Contoh: GM-01 atau STZ-01"
+                  className="w-full px-3 py-2 text-sm font-mono border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  Lokasi Rak / Penyimpanan
+                </label>
+                <input
+                  type="text"
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  placeholder="Contoh: Rak A-1, Gudang Utama"
+                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                Keterangan / Deskripsi (Opsional)
+              </label>
+              <input
+                type="text"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Catatan bahan, instruksi, atau keterangan tambahan..."
                 className="w-full px-3 py-2 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
               />
             </div>

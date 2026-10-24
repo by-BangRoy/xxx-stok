@@ -77,6 +77,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   // Preferences Form state
   const [soundEnabled, setSoundEnabled] = useState(settings.soundEnabled);
+  const [defaultMinStock, setDefaultMinStock] = useState<number>(settings.defaultMinStockAlert || 3);
   const [enableStockNotifications, setEnableStockNotifications] = useState(settings.enableStockNotifications);
 
   // Clear stock confirmation dialog state
@@ -123,6 +124,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         });
         setPinRequired(settings.pinRequired);
         setSoundEnabled(settings.soundEnabled);
+        setDefaultMinStock(settings.defaultMinStockAlert || 3);
         setEnableStockNotifications(settings.enableStockNotifications);
         setDeviceName(currentDevice.deviceName);
         setOperatorName(currentDevice.operatorName);

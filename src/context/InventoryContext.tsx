@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { Product, StockLog, RealtimeMessage, DeviceInfo, StockChangeType, AppSettings, DEFAULT_SETTINGS } from '../types/inventory.ts';
+import { INITIAL_PRODUCTS } from '../data/initialData.ts';
 import { playChime, isSoundEnabled, setSoundEnabled } from '../utils/audio.ts';
 
 export interface RealtimeToast {
@@ -108,8 +109,38 @@ function getInitialDeviceProfile() {
 }
 
 export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [products, setProducts] = useState<Product[]>([]);
-  const [stockLogs, setStockLogs] = useState<StockLog[]>([]);
+  // Initialize with local cache or INITIAL_PRODUCTS so stock is NEVER empty on initial entry or login
+  const [products, setProducts] = useState<Product[]>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('stz_saved_products');
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return parsed.map((p: Product) => ({
+              ...p,
+              description: (/koleksi\s+busana/i.test(p.description || '') || /di+mport/i.test(p.description || '') || /stz\s+fashion/i.test(p.description || '')) ? '' : p.description,
+            }));
+          }
+        } catch (e) {}
+      }
+    }
+    return INITIAL_PRODUCTS;
+  });
+
+  const [stockLogs, setStockLogs] = useState<StockLog[]>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('stz_saved_logs');
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) return parsed;
+        } catch (e) {}
+      }
+    }
+    return [];
+  });
+
   const [settings, setSettings] = useState<AppSettings>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('stz_cached_settings');
@@ -122,10 +153,10 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return DEFAULT_SETTINGS;
   });
 
-  // Authentication State
+  // Authentication State: remember authentication on device unless explicitly locked
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
-    return sessionStorage.getItem('stz_unlocked') === 'true';
+    return sessionStorage.getItem('stz_unlocked') === 'true' || localStorage.getItem('stz_unlocked') === 'true';
   });
 
   const [connectedDevicesCount, setConnectedDevicesCount] = useState<number>(1);
@@ -137,6 +168,27 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   useEffect(() => {
     currentDeviceRef.current = currentDevice;
   }, [currentDevice]);
+
+  // Automatically persist products whenever changed, ensuring products are never lost or emptied
+  useEffect(() => {
+    if (typeof window !== 'undefined' && Array.isArray(products) && products.length > 0) {
+      try {
+        localStorage.setItem('stz_saved_products', JSON.stringify(products));
+      } catch (e) {
+        console.warn('Failed to save products to localStorage:', e);
+      }
+    }
+  }, [products]);
+
+  // Automatically persist logs
+  useEffect(() => {
+    if (typeof window !== 'undefined' && Array.isArray(stockLogs) && stockLogs.length > 0) {
+      try {
+        localStorage.setItem('stz_saved_logs', JSON.stringify(stockLogs.slice(0, 100)));
+      } catch (e) {}
+    }
+  }, [stockLogs]);
+
   const [soundOn, setSoundOn] = useState(isSoundEnabled);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
 
@@ -189,6 +241,7 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         setIsAuthenticated(true);
         if (typeof window !== 'undefined') {
           sessionStorage.setItem('stz_unlocked', 'true');
+          localStorage.setItem('stz_unlocked', 'true');
         }
         playChime('sale');
         return { success: true };
@@ -202,6 +255,7 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         setIsAuthenticated(true);
         if (typeof window !== 'undefined') {
           sessionStorage.setItem('stz_unlocked', 'true');
+          localStorage.setItem('stz_unlocked', 'true');
         }
         playChime('sale');
         return { success: true };
@@ -214,6 +268,7 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setIsAuthenticated(false);
     if (typeof window !== 'undefined') {
       sessionStorage.removeItem('stz_unlocked');
+      localStorage.removeItem('stz_unlocked');
     }
     playChime('warning');
   };
@@ -255,28 +310,74 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       if (resInv.ok) {
         const invData = await resInv.json();
         const incoming: Product[] = invData.products || [];
-        setProducts(prev => {
-          // Check if any product counts or variant stocks changed
-          const changed =
-            prev.length !== incoming.length ||
-            prev.some((p) => {
-              const inc = incoming.find((item) => item.id === p.id);
-              if (!inc) return true;
-              if (inc.totalStock !== p.totalStock) return true;
-              return inc.variants.some((iv, idx) => iv.stock !== p.variants[idx]?.stock);
-            });
-          if (changed || prev.length === 0) {
-            return incoming.map((p) => ({
-              ...p,
-              variants: p.variants.map((v) => ({ ...v })),
-            }));
-          }
-          return prev;
-        });
+        if (incoming.length > 0) {
+          setProducts(prev => {
+            const changed =
+              prev.length !== incoming.length ||
+              prev.some((p) => {
+                const inc = incoming.find((item) => item.id === p.id);
+                if (!inc) return true;
+                if (inc.name !== p.name) return true;
+                if (inc.category !== p.category) return true;
+                if (inc.sku !== p.sku) return true;
+                if (inc.location !== p.location) return true;
+                if (inc.description !== p.description) return true;
+                if (inc.imageUrl !== p.imageUrl) return true;
+                if (inc.totalStock !== p.totalStock) return true;
+                if (inc.updatedAt !== p.updatedAt) return true;
+                if (inc.variants.length !== p.variants.length) return true;
+                return inc.variants.some((iv, idx) => {
+                  const pv = p.variants[idx];
+                  if (!pv) return true;
+                  return (
+                    iv.stock !== pv.stock ||
+                    iv.size !== pv.size ||
+                    iv.color !== pv.color ||
+                    iv.sku !== pv.sku ||
+                    iv.price !== pv.price ||
+                    iv.minStock !== pv.minStock
+                  );
+                });
+              });
+            if (changed || prev.length === 0) {
+              const mapped = incoming.map((p) => ({
+                ...p,
+                variants: p.variants.map((v) => ({ ...v })),
+              }));
+              if (typeof window !== 'undefined') {
+                try {
+                  localStorage.setItem('stz_saved_products', JSON.stringify(mapped));
+                } catch (e) {}
+              }
+              return mapped;
+            }
+            return prev;
+          });
+        } else {
+          // If server ever returns empty array, DO NOT wipe existing products!
+          // Restore server with local cache or fallback so stock is preserved.
+          setProducts(prev => {
+            if (prev.length > 0) {
+              fetch('/api/inventory/sync-backup', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ clientProducts: prev }),
+              }).catch(() => {});
+              return prev;
+            }
+            return INITIAL_PRODUCTS;
+          });
+        }
       }
       if (resLogs.ok) {
         const logsData = await resLogs.json();
-        setStockLogs(logsData.logs || []);
+        const logsList = logsData.logs || [];
+        setStockLogs(logsList);
+        if (typeof window !== 'undefined' && logsList.length > 0) {
+          try {
+            localStorage.setItem('stz_saved_logs', JSON.stringify(logsList));
+          } catch (e) {}
+        }
       }
       if (resSettings.ok) {
         const settingsData = await resSettings.json();
@@ -391,11 +492,21 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     switch (msg.type) {
       case 'INIT': {
-        if (msg.payload?.products) {
+        if (msg.payload?.products && Array.isArray(msg.payload.products) && msg.payload.products.length > 0) {
           setProducts(msg.payload.products);
+          if (typeof window !== 'undefined') {
+            try {
+              localStorage.setItem('stz_saved_products', JSON.stringify(msg.payload.products));
+            } catch (e) {}
+          }
         }
-        if (msg.payload?.logs) {
+        if (msg.payload?.logs && Array.isArray(msg.payload.logs) && msg.payload.logs.length > 0) {
           setStockLogs(msg.payload.logs);
+          if (typeof window !== 'undefined') {
+            try {
+              localStorage.setItem('stz_saved_logs', JSON.stringify(msg.payload.logs));
+            } catch (e) {}
+          }
         }
         if (msg.payload?.settings) {
           setSettings(msg.payload.settings);
@@ -661,9 +772,36 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       }
 
       case 'PRODUCT_UPDATED': {
-        const { product } = msg.payload || {};
+        const { product, log } = msg.payload || {};
         if (product) {
-          setProducts(prev => prev.map(p => (p.id === product.id ? product : p)));
+          const clonedProduct: Product = {
+            ...product,
+            variants: Array.isArray(product.variants) ? product.variants.map((v: any) => ({ ...v })) : [],
+          };
+          setProducts(prev => {
+            const next = prev.map(p => (p.id === clonedProduct.id ? clonedProduct : p));
+            if (typeof window !== 'undefined') {
+              try {
+                localStorage.setItem('stz_saved_products', JSON.stringify(next));
+              } catch (e) {}
+            }
+            return next;
+          });
+        }
+        if (log) {
+          setStockLogs(prev => [log, ...prev.filter(l => l.id !== log.id)].slice(0, 100));
+        }
+        if (isRemote) {
+          playChime('adjustment');
+          addNotificationToast({
+            title: `🔄 Info Barang Diperbarui (${senderDevice})`,
+            message: `"${product?.name || 'Produk'}" telah diperbarui oleh ${senderOperator} (${senderDevice}).`,
+            type: 'info',
+            deviceName: senderDevice,
+            operatorName: senderOperator,
+            isRemote,
+            productName: product?.name || 'Produk',
+          });
         }
         break;
       }
@@ -847,6 +985,11 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
       if (data.products) {
         setProducts(data.products);
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem('stz_saved_products', JSON.stringify(data.products));
+          } catch (e) {}
+        }
       }
       if (data.log) {
         setStockLogs(prev => [data.log, ...prev]);
@@ -878,6 +1021,9 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       }
 
       setProducts([]);
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('stz_saved_products');
+      }
       if (data.log) {
         setStockLogs(prev => [data.log, ...prev]);
       }
@@ -1058,10 +1204,39 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       if (response.ok) {
         const data = await response.json();
         if (data.product) {
-          setProducts(prev => [data.product, ...prev.filter(p => p.id !== data.product.id)]);
+          const clonedProduct: Product = {
+            ...data.product,
+            variants: Array.isArray(data.product.variants) ? data.product.variants.map((v: any) => ({ ...v })) : [],
+          };
+          setProducts(prev => {
+            const next = [clonedProduct, ...prev.filter(p => p.id !== clonedProduct.id)];
+            if (typeof window !== 'undefined') {
+              try {
+                localStorage.setItem('stz_saved_products', JSON.stringify(next));
+              } catch (e) {}
+            }
+            return next;
+          });
+
+          if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+            try {
+              const bc = new BroadcastChannel('stz_inventory_channel');
+              bc.postMessage({
+                type: 'PRODUCT_CREATED',
+                payload: { product: clonedProduct, log: data.log },
+                meta: {
+                  deviceId: currentDevice.deviceId,
+                  deviceName: currentDevice.deviceName,
+                  operatorName: currentDevice.operatorName,
+                  timestamp: new Date().toISOString(),
+                },
+              });
+              bc.close();
+            } catch (e) {}
+          }
         }
         if (data.log) {
-          setStockLogs(prev => [data.log, ...prev]);
+          setStockLogs(prev => [data.log, ...prev].slice(0, 100));
         }
         return true;
       }
@@ -1087,7 +1262,39 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       if (response.ok) {
         const data = await response.json();
         if (data.product) {
-          setProducts(prev => prev.map(p => (p.id === data.product.id ? data.product : p)));
+          const clonedProduct: Product = {
+            ...data.product,
+            variants: Array.isArray(data.product.variants) ? data.product.variants.map((v: any) => ({ ...v })) : [],
+          };
+          setProducts(prev => {
+            const next = prev.map(p => (p.id === clonedProduct.id ? clonedProduct : p));
+            if (typeof window !== 'undefined') {
+              try {
+                localStorage.setItem('stz_saved_products', JSON.stringify(next));
+              } catch (e) {}
+            }
+            return next;
+          });
+
+          if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+            try {
+              const bc = new BroadcastChannel('stz_inventory_channel');
+              bc.postMessage({
+                type: 'PRODUCT_UPDATED',
+                payload: { product: clonedProduct, log: data.log },
+                meta: {
+                  deviceId: currentDevice.deviceId,
+                  deviceName: currentDevice.deviceName,
+                  operatorName: currentDevice.operatorName,
+                  timestamp: new Date().toISOString(),
+                },
+              });
+              bc.close();
+            } catch (e) {}
+          }
+        }
+        if (data.log) {
+          setStockLogs(prev => [data.log, ...prev.filter(l => l.id !== data.log.id)].slice(0, 100));
         }
         return true;
       }
@@ -1109,7 +1316,33 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         method: 'DELETE',
       });
       if (response.ok) {
-        setProducts(prev => prev.filter(p => p.id !== id));
+        const data = await response.json().catch(() => ({}));
+        setProducts(prev => {
+          const next = prev.filter(p => p.id !== id);
+          if (typeof window !== 'undefined') {
+            try {
+              localStorage.setItem('stz_saved_products', JSON.stringify(next));
+            } catch (e) {}
+          }
+          return next;
+        });
+
+        if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+          try {
+            const bc = new BroadcastChannel('stz_inventory_channel');
+            bc.postMessage({
+              type: 'PRODUCT_DELETED',
+              payload: { productId: id, productName: data.productName || 'Produk' },
+              meta: {
+                deviceId: currentDevice.deviceId,
+                deviceName: currentDevice.deviceName,
+                operatorName: currentDevice.operatorName,
+                timestamp: new Date().toISOString(),
+              },
+            });
+            bc.close();
+          } catch (e) {}
+        }
         return true;
       }
       return false;

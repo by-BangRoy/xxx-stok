@@ -23,6 +23,18 @@ export function exportInventoryToCSV(products: Product[], storeName: string = 'S
     return;
   }
 
+  // Exact download timestamp in local WIB format
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const hours = String(now.getHours()).padStart(2, '0');
+  const minutes = String(now.getMinutes()).padStart(2, '0');
+  const seconds = String(now.getSeconds()).padStart(2, '0');
+
+  const downloadTimeStr = `${day}/${month}/${year} ${hours}:${minutes}:${seconds} WIB`;
+  const fileDateTimeStr = `${year}-${month}-${day}_${hours}-${minutes}-${seconds}`;
+
   // Standar Kolom Rapi & Terstruktur
   const headers = [
     'No',
@@ -34,7 +46,8 @@ export function exportInventoryToCSV(products: Product[], storeName: string = 'S
     'Stok (Lusin)',
     'Batas Min Stok (Pcs)',
     'Status Stok',
-    'Catatan / Terakhir Diperbarui'
+    'Waktu Unduh Data (Download)',
+    'Terakhir Diperbarui'
   ];
 
   const rows: string[] = [];
@@ -54,24 +67,28 @@ export function exportInventoryToCSV(products: Product[], storeName: string = 'S
       }
 
       const lastUpdated = product.updatedAt
-        ? new Date(product.updatedAt).toLocaleDateString('id-ID', {
+        ? new Date(product.updatedAt).toLocaleString('id-ID', {
             day: '2-digit',
-            month: 'short',
-            year: 'numeric'
-          })
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+          }) + ' WIB'
         : '-';
 
       const row = [
         String(rowNumber++),
         escapeCsvCell(product.name),
-        escapeCsvCell(product.category || 'Umum'),
+        escapeCsvCell(product.category || 'Pakaian'),
         escapeCsvCell(variant.color || 'Standar'),
         escapeCsvCell(variant.size || 'All Size'),
         String(stockPcs),
         escapeCsvCell(lusinStr),
         String(minStock),
         statusStok,
-        escapeCsvCell(product.description ? `${product.description} (${lastUpdated})` : lastUpdated)
+        escapeCsvCell(downloadTimeStr),
+        escapeCsvCell(lastUpdated)
       ];
 
       rows.push(row.join(','));
@@ -89,19 +106,28 @@ export function exportInventoryToCSV(products: Product[], storeName: string = 'S
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
 
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  const dateStr = `${year}-${month}-${day}`;
   const cleanStoreName = (storeName || 'STZstok').trim().replace(/[^a-zA-Z0-9]/g, '_');
+  const filename = `Stok_Inventaris_${cleanStoreName}_${fileDateTimeStr}_RAPI.csv`;
 
   link.setAttribute('href', url);
-  link.setAttribute('download', `Stok_Inventaris_${cleanStoreName}_${dateStr}_RAPI.csv`);
+  link.setAttribute('download', filename);
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
+
+  // Sync and update CSV in server storage aligned with exact download time
+  try {
+    fetch('/api/inventory/save-csv', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        csvContent,
+        filename,
+        downloadTime: downloadTimeStr
+      }),
+    }).catch(() => {});
+  } catch (e) {}
 }
 
 /**
@@ -112,6 +138,15 @@ export function exportAuditLogsToCSV(logs: StockLog[]) {
     alert('Belum ada catatan aktivitas riwayat stok.');
     return;
   }
+
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const hours = String(now.getHours()).padStart(2, '0');
+  const minutes = String(now.getMinutes()).padStart(2, '0');
+  const seconds = String(now.getSeconds()).padStart(2, '0');
+  const fileDateTimeStr = `${year}-${month}-${day}_${hours}-${minutes}-${seconds}`;
 
   const headers = [
     'No',
@@ -146,7 +181,7 @@ export function exportAuditLogsToCSV(logs: StockLog[]) {
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit'
-    });
+    }) + ' WIB';
 
     return [
       String(idx + 1),
@@ -168,10 +203,8 @@ export function exportAuditLogsToCSV(logs: StockLog[]) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
 
-  const now = new Date();
-  const dateStr = now.toISOString().slice(0, 10);
   link.setAttribute('href', url);
-  link.setAttribute('download', `Riwayat_Aktivitas_STZstok_${dateStr}_RAPI.csv`);
+  link.setAttribute('download', `Riwayat_Aktivitas_STZstok_${fileDateTimeStr}_RAPI.csv`);
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);

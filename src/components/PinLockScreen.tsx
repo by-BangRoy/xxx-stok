@@ -184,13 +184,6 @@ export const PinLockScreen: React.FC = () => {
             <Delete className="w-5 h-5" />
           </button>
         </div>
-
-        {/* Secure Note */}
-        <div className="mt-2 text-center">
-          <p className="text-[10px] text-slate-400">
-            PIN dapat diubah kapan saja di menu Pengaturan Keamanan
-          </p>
-        </div>
       </div>
     </div>
   );

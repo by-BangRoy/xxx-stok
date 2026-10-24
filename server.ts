@@ -49,24 +49,32 @@ function loadData() {
   try {
     if (fs.existsSync(INVENTORY_FILE)) {
       const raw = fs.readFileSync(INVENTORY_FILE, 'utf-8');
-      products = JSON.parse(raw);
-      let modified = false;
-      for (const p of products) {
-        if (p.description && /di+mport\s+dari\s+file\s+rekap\s+stok\s+csv/i.test(p.description)) {
-          p.description = '';
-          modified = true;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        products = parsed;
+        let modified = false;
+        for (const p of products) {
+          if (p.description && (/di+mport\s+dari\s+file\s+rekap\s+stok\s+csv/i.test(p.description) || /koleksi\s+busana/i.test(p.description) || /stz\s+fashion/i.test(p.description))) {
+            p.description = '';
+            modified = true;
+          }
         }
-      }
-      if (modified) {
+        if (modified) {
+          saveInventory();
+        }
+      } else {
+        // File exists but is empty array: seed from INITIAL_PRODUCTS so stock is never empty!
+        products = JSON.parse(JSON.stringify(INITIAL_PRODUCTS));
         saveInventory();
       }
     } else {
-      products = [];
+      products = JSON.parse(JSON.stringify(INITIAL_PRODUCTS));
       saveInventory();
     }
   } catch (err) {
     console.error('Error loading inventory file:', err);
-    products = [];
+    products = JSON.parse(JSON.stringify(INITIAL_PRODUCTS));
+    saveInventory();
   }
 
   try {
@@ -203,6 +211,11 @@ function broadcastPresence() {
 
 // REST API Endpoints
 app.get('/api/inventory', (req, res) => {
+  // Guard: if products is somehow empty, seed from INITIAL_PRODUCTS immediately
+  if (!products || products.length === 0) {
+    products = JSON.parse(JSON.stringify(INITIAL_PRODUCTS));
+    saveInventory();
+  }
   const totalUnits = products.reduce((acc, p) => acc + p.totalStock, 0);
   res.json({
     products,
@@ -210,6 +223,56 @@ app.get('/api/inventory', (req, res) => {
     totalUnits,
     timestamp: new Date().toISOString(),
   });
+});
+
+// Restore/Sync backup from client to prevent losing user-inputted items
+app.post('/api/inventory/sync-backup', (req, res) => {
+  const { clientProducts } = req.body;
+  if (Array.isArray(clientProducts) && clientProducts.length > 0) {
+    if (products.length === 0 || clientProducts.length > products.length) {
+      products = clientProducts;
+      saveInventory();
+      broadcast({
+        type: 'INIT',
+        payload: {
+          products,
+          logs: stockLogs,
+          settings: appSettings,
+        },
+      });
+      return res.json({ success: true, restored: true, count: products.length });
+    }
+  }
+  return res.json({ success: true, restored: false, count: products.length });
+});
+
+// Save and synchronize CSV snapshot on server storage matching download time
+app.post('/api/inventory/save-csv', (req, res) => {
+  const { csvContent, filename } = req.body;
+  if (!csvContent) {
+    return res.status(400).json({ error: 'Data CSV kosong' });
+  }
+  try {
+    const csvDir = path.join(__dirname, 'data');
+    if (!fs.existsSync(csvDir)) {
+      fs.mkdirSync(csvDir, { recursive: true });
+    }
+    // Save latest CSV
+    fs.writeFileSync(path.join(csvDir, 'inventory_latest.csv'), csvContent, 'utf-8');
+    if (filename) {
+      fs.writeFileSync(path.join(csvDir, filename), csvContent, 'utf-8');
+    }
+    // Also update public/assets/aistudio if folder exists
+    const publicAssetDir = path.join(__dirname, 'public', 'assets', 'aistudio');
+    if (fs.existsSync(publicAssetDir)) {
+      fs.writeFileSync(path.join(publicAssetDir, 'Stok_Inventaris_STZstok_latest.csv'), csvContent, 'utf-8');
+    }
+    console.log(`[CSV Sync] Server storage updated with latest CSV download: ${filename || 'inventory_latest.csv'}`);
+    return res.json({ success: true, saved: true, filename });
+  } catch (err: any) {
+    console.error('Failed to save CSV to server storage:', err);
+    return res.status(500).json({ error: 'Gagal menyimpan file CSV di server', details: err?.message });
+  }
 });
 
 app.get('/api/logs', (req, res) => {
@@ -471,7 +534,7 @@ app.post('/api/products', (req, res) => {
 // Update product
 app.put('/api/products/:id', (req, res) => {
   const { id } = req.params;
-  const body = req.body;
+  const body = req.body || {};
   const { deviceId = 'web', deviceName = 'Web App', operatorName = 'Admin' } = body;
 
   const productIndex = products.findIndex(p => p.id === id);
@@ -480,14 +543,18 @@ app.put('/api/products/:id', (req, res) => {
   }
 
   const existingProduct = products[productIndex];
-  const updatedVariants = body.variants ? body.variants.map((v: any, index: number) => ({
+  const oldName = existingProduct.name;
+  const oldCategory = existingProduct.category;
+  const oldStock = existingProduct.totalStock;
+
+  const updatedVariants = Array.isArray(body.variants) ? body.variants.map((v: any, index: number) => ({
     id: v.id || `var-${id}-${index + 1}`,
-    sku: typeof v.sku === 'string' ? v.sku.trim() : '',
+    sku: v.sku !== undefined ? (typeof v.sku === 'string' ? v.sku.trim() : '') : (existingProduct.sku || ''),
     size: v.size || 'All Size',
     color: v.color || 'Standar',
     colorHex: v.colorHex || '#CBD5E1',
-    stock: Number(v.stock) || 0,
-    minStock: Number(v.minStock) || 2,
+    stock: Math.max(0, Number(v.stock) || 0),
+    minStock: Math.max(0, Number(v.minStock) || 2),
     price: Number(v.price) || 0,
     costPrice: Number(v.costPrice) || 0,
     barcode: v.barcode || '',
@@ -498,13 +565,13 @@ app.put('/api/products/:id', (req, res) => {
   const updatedProduct: Product = {
     ...existingProduct,
     sku: body.sku !== undefined ? (typeof body.sku === 'string' ? body.sku.trim() : '') : existingProduct.sku,
-    name: body.name || existingProduct.name,
-    category: body.category || existingProduct.category,
+    name: (typeof body.name === 'string' && body.name.trim()) ? body.name.trim() : existingProduct.name,
+    category: (typeof body.category === 'string' && body.category.trim()) ? body.category.trim() : existingProduct.category,
     description: body.description !== undefined 
       ? ((body.description && !/di+mport\s+dari\s+file\s+rekap\s+stok\s+csv/i.test(body.description)) ? body.description.trim() : '')
       : ((existingProduct.description && !/di+mport\s+dari\s+file\s+rekap\s+stok\s+csv/i.test(existingProduct.description)) ? existingProduct.description : ''),
-    imageUrl: body.imageUrl || existingProduct.imageUrl,
-    location: body.location || existingProduct.location,
+    imageUrl: (typeof body.imageUrl === 'string' && body.imageUrl.trim()) ? body.imageUrl.trim() : existingProduct.imageUrl,
+    location: body.location !== undefined ? (typeof body.location === 'string' ? body.location.trim() : '') : existingProduct.location,
     variants: updatedVariants,
     totalStock,
     updatedAt: new Date().toISOString(),
@@ -514,13 +581,100 @@ app.put('/api/products/:id', (req, res) => {
   products[productIndex] = updatedProduct;
   saveInventory();
 
+  // Create audit log for product update
+  const stockDiff = totalStock - oldStock;
+  let changeDetail = '';
+  if (updatedProduct.name !== oldName) {
+    changeDetail = `Ubah Nama: "${oldName}" ➔ "${updatedProduct.name}"`;
+  } else if (updatedProduct.category !== oldCategory) {
+    changeDetail = `Ubah Kategori: "${oldCategory}" ➔ "${updatedProduct.category}"`;
+  } else if (stockDiff !== 0) {
+    changeDetail = `Update Stok: ${oldStock} ➔ ${totalStock} pcs (${stockDiff > 0 ? '+' : ''}${stockDiff})`;
+  } else {
+    changeDetail = `Pembaruan Info Produk (${updatedProduct.category})`;
+  }
+
+  const log: StockLog = {
+    id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    timestamp: new Date().toISOString(),
+    productId: updatedProduct.id,
+    productName: updatedProduct.name,
+    variantId: updatedProduct.variants[0]?.id || '',
+    variantDescription: changeDetail,
+    changeType: 'adjustment',
+    delta: stockDiff,
+    previousStock: oldStock,
+    newStock: totalStock,
+    reason: `Perubahan data produk oleh ${operatorName} (${deviceName})`,
+    deviceId,
+    deviceName,
+    operatorName,
+  };
+
+  stockLogs.unshift(log);
+  if (stockLogs.length > 500) stockLogs.splice(500);
+  saveLogs();
+
   broadcast({
     type: 'PRODUCT_UPDATED',
-    payload: { product: updatedProduct },
+    payload: { product: updatedProduct, log },
     meta: { deviceId, deviceName, operatorName, timestamp: new Date().toISOString() },
   });
 
-  return res.json({ success: true, product: updatedProduct });
+  return res.json({ success: true, product: updatedProduct, log });
+});
+
+// Save downloaded CSV to server storage and keep synchronized with download time
+app.post('/api/inventory/save-csv', (req, res) => {
+  try {
+    const { csvContent, filename, downloadTime } = req.body || {};
+    if (!csvContent) {
+      return res.status(400).json({ error: 'Data CSV kosong' });
+    }
+
+    const exportsDir = path.join(DATA_DIR, 'exports');
+    if (!fs.existsSync(exportsDir)) {
+      fs.mkdirSync(exportsDir, { recursive: true });
+    }
+
+    // Save exact timestamped file and latest reference file
+    const safeFilename = filename ? path.basename(filename) : `stok_${Date.now()}.csv`;
+    const targetPath = path.join(exportsDir, safeFilename);
+    const latestPath = path.join(DATA_DIR, 'latest_stok.csv');
+
+    fs.writeFileSync(targetPath, csvContent, 'utf-8');
+    fs.writeFileSync(latestPath, csvContent, 'utf-8');
+
+    // Keep metadata of last CSV export
+    const metaPath = path.join(DATA_DIR, 'last_csv_export.json');
+    fs.writeFileSync(metaPath, JSON.stringify({
+      filename: safeFilename,
+      downloadTime: downloadTime || new Date().toISOString(),
+      timestamp: new Date().toISOString(),
+      productsCount: products.length,
+      totalUnits: products.reduce((acc, p) => acc + p.totalStock, 0),
+    }, null, 2), 'utf-8');
+
+    return res.json({ success: true, filename: safeFilename, downloadTime });
+  } catch (err: any) {
+    console.error('Error saving CSV to server:', err);
+    return res.status(500).json({ error: 'Gagal menyimpan file CSV di server' });
+  }
+});
+
+// Sync backup endpoint (preserves catalog if client has state)
+app.post('/api/inventory/sync-backup', (req, res) => {
+  try {
+    const { clientProducts } = req.body || {};
+    if (products.length === 0 && Array.isArray(clientProducts) && clientProducts.length > 0) {
+      products = clientProducts;
+      saveInventory();
+      return res.json({ success: true, restored: true, count: products.length });
+    }
+    return res.json({ success: true, count: products.length });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
 });
 
 // Delete product

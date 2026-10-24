@@ -681,6 +681,11 @@ function DashboardView() {
             setAdjustModalProduct(null);
             setAdjustModalVariantId(undefined);
           }}
+          onOpenFullEdit={(prod) => {
+            setAdjustModalProduct(null);
+            setEditingProduct(prod);
+            setIsFormModalOpen(true);
+          }}
         />
       )}
 

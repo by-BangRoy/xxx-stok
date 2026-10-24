@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Product, ProductVariant } from '../types/inventory.ts';
+import React from 'react';
+import { Product } from '../types/inventory.ts';
 import { useInventory } from '../context/InventoryContext.tsx';
 import { formatLusin } from '../utils/formatters.ts';
 import { 
@@ -8,10 +8,7 @@ import {
   AlertTriangle, 
   AlertOctagon,
   CheckCircle2,
-  Plus, 
-  Minus, 
-  MapPin,
-  RefreshCw
+  MapPin
 } from 'lucide-react';
 
 interface ProductTableViewProps {
@@ -27,18 +24,8 @@ export const ProductTableView: React.FC<ProductTableViewProps> = ({
   onOpenEdit,
   filterStatus,
 }) => {
-  const { adjustStock, settings } = useInventory();
+  const { settings } = useInventory();
   const defaultMin = settings.defaultMinStockAlert || 3;
-  const [adjustingId, setAdjustingId] = useState<string | null>(null);
-
-  const handleQuickAdjust = async (product: Product, variant: ProductVariant, delta: number) => {
-    if (variant.stock + delta < 0) return;
-    setAdjustingId(variant.id);
-    const changeType = delta < 0 ? 'sale' : 'restock';
-    const reason = delta < 0 ? 'Barang Keluar (Tabel Kasir)' : 'Barang Masuk (Tabel Restock)';
-    await adjustStock(product.id, variant.id, delta, changeType, reason);
-    setAdjustingId(null);
-  };
 
   return (
     <div className="bg-white rounded-2xl border border-yellow-200/90 overflow-hidden shadow-xs">
@@ -100,9 +87,6 @@ export const ProductTableView: React.FC<ProductTableViewProps> = ({
                       />
                       <div>
                         <div className="font-extrabold text-slate-900 text-sm leading-snug">{product.name}</div>
-                        {product.description && !/di+mport\s+dari\s+file\s+rekap\s+stok\s+csv/i.test(product.description) && (
-                          <div className="text-[11px] text-slate-400 line-clamp-1 mt-0.5">{product.description}</div>
-                        )}
                       </div>
                     </div>
                   </td>
@@ -131,7 +115,7 @@ export const ProductTableView: React.FC<ProductTableViewProps> = ({
                     )}
                   </td>
 
-                  {/* Variants & Inline +/- Stock Modifiers */}
+                  {/* Variants & Stok Fisik */}
                   <td className="py-3.5 px-4">
                     <div className="flex flex-wrap gap-2">
                       {displayVariants.map((variant) => {
@@ -139,7 +123,6 @@ export const ProductTableView: React.FC<ProductTableViewProps> = ({
                         const vMin = Number(variant.minStock) > 0 ? Number(variant.minStock) : defaultMin;
                         const vOut = vStock <= 0;
                         const vLow = vStock <= vMin && vStock > 0;
-                        const isThisAdjusting = adjustingId === variant.id;
 
                         return (
                           <div
@@ -170,30 +153,8 @@ export const ProductTableView: React.FC<ProductTableViewProps> = ({
                                 ? 'bg-amber-400 text-slate-950 shadow-xs' 
                                 : 'bg-white text-emerald-950 border border-emerald-200 font-black'
                             }`}>
-                              {isThisAdjusting ? '...' : vOut ? '0 pcs (HABIS)' : vLow ? `${variant.stock} pcs (MENIPIS)` : `${variant.stock} pcs`}
+                              {vOut ? '0 pcs (HABIS)' : vLow ? `${variant.stock} pcs (MENIPIS)` : `${variant.stock} pcs`}
                             </span>
-
-                            {/* Mini Instant Adjust +/- Buttons */}
-                            <div className="flex items-center gap-1 ml-0.5">
-                              <button
-                                type="button"
-                                disabled={variant.stock <= 0 || isThisAdjusting}
-                                onClick={() => handleQuickAdjust(product, variant, -1)}
-                                className="w-5 h-5 rounded-md bg-white hover:bg-rose-100 border border-slate-200 text-slate-700 hover:text-rose-700 flex items-center justify-center disabled:opacity-25 disabled:pointer-events-none active:scale-90 transition-all shadow-xs"
-                                title="Kurang 1 (Barang Keluar / Terjual)"
-                              >
-                                <Minus className="w-3 h-3" />
-                              </button>
-                              <button
-                                type="button"
-                                disabled={isThisAdjusting}
-                                onClick={() => handleQuickAdjust(product, variant, 1)}
-                                className="w-5 h-5 rounded-md bg-white hover:bg-emerald-100 border border-slate-200 text-slate-700 hover:text-emerald-700 flex items-center justify-center disabled:opacity-25 disabled:pointer-events-none active:scale-90 transition-all shadow-xs"
-                                title="Tambah 1 (Barang Masuk / Restock)"
-                              >
-                                <Plus className="w-3 h-3" />
-                              </button>
-                            </div>
                           </div>
                         );
                       })}
@@ -259,10 +220,10 @@ export const ProductTableView: React.FC<ProductTableViewProps> = ({
                       <button
                         onClick={() => onOpenAdjust(product)}
                         className="px-2.5 py-1.5 bg-slate-900 hover:bg-amber-500 hover:text-slate-950 text-white rounded-xl text-xs font-extrabold transition-colors flex items-center gap-1 shadow-sm active:scale-95"
-                        title="Ubah & Catat Stok Detail"
+                        title="Kelola & Ubah Stok"
                       >
                         <SlidersHorizontal className="w-3.5 h-3.5 text-amber-400" />
-                        <span>Ubah Stok</span>
+                        <span>Kelola & Ubah Stok</span>
                       </button>
 
                       <button
