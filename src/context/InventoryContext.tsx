@@ -2,6 +2,22 @@ import React, { createContext, useContext, useState, useEffect, useRef, useCallb
 import { Product, StockLog, RealtimeMessage, DeviceInfo, StockChangeType, AppSettings, DEFAULT_SETTINGS } from '../types/inventory.ts';
 import { INITIAL_PRODUCTS } from '../data/initialData.ts';
 import { playChime, isSoundEnabled, setSoundEnabled } from '../utils/audio.ts';
+import { 
+  db, 
+  ensureFirebaseAuth, 
+  PRODUCTS_COLLECTION, 
+  LOGS_COLLECTION, 
+  SETTINGS_COLLECTION, 
+  SETTINGS_DOC_ID,
+  syncProductToFirestore,
+  deleteProductFromFirestore,
+  saveLogToFirestore,
+  saveSettingsToFirestore,
+  batchSyncProductsToFirestore,
+  handleFirestoreError,
+  OperationType
+} from '../services/firebase.ts';
+import { collection, doc, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
 
 export interface RealtimeToast {
   id: string;
@@ -892,8 +908,92 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     window.addEventListener('focus', handleWakeOrFocus);
     window.addEventListener('online', handleWakeOrFocus);
 
+    // Real-time Firestore Cloud Database Synchronization (100% Free Tier, Auto-Updating)
+    let unsubProducts: (() => void) | null = null;
+    let unsubLogs: (() => void) | null = null;
+    let unsubSettings: (() => void) | null = null;
+
+    ensureFirebaseAuth().then(() => {
+      try {
+        // 1. Real-time Firestore Products sync across all devices
+        unsubProducts = onSnapshot(collection(db, PRODUCTS_COLLECTION), (snapshot) => {
+          if (!snapshot.empty) {
+            const list: Product[] = [];
+            snapshot.forEach((d) => {
+              const item = d.data() as Product;
+              if (item && item.id) list.push(item);
+            });
+            if (list.length > 0) {
+              setProducts(list);
+              if (typeof window !== 'undefined') {
+                try {
+                  localStorage.setItem('stz_saved_products', JSON.stringify(list));
+                } catch (e) {}
+              }
+            }
+          } else {
+            // First time setup on clean Firestore: seed cloud database from catalog
+            setProducts((current) => {
+              if (current && current.length > 0) {
+                batchSyncProductsToFirestore(current);
+              }
+              return current;
+            });
+          }
+        }, (err) => {
+          if (err?.code === 'permission-denied') {
+            handleFirestoreError(err, OperationType.GET, PRODUCTS_COLLECTION);
+          } else {
+            console.warn('[Firestore] Products real-time listener:', err);
+          }
+        });
+
+        // 2. Real-time Firestore Logs sync
+        const logsQ = query(collection(db, LOGS_COLLECTION), orderBy('timestamp', 'desc'), limit(50));
+        unsubLogs = onSnapshot(logsQ, (snapshot) => {
+          if (!snapshot.empty) {
+            const logList: StockLog[] = [];
+            snapshot.forEach((d) => {
+              const item = d.data() as StockLog;
+              if (item && item.id) logList.push(item);
+            });
+            if (logList.length > 0) {
+              setStockLogs(logList);
+            }
+          }
+        }, (err) => {
+          if (err?.code === 'permission-denied') {
+            handleFirestoreError(err, OperationType.GET, LOGS_COLLECTION);
+          } else {
+            console.warn('[Firestore] Logs real-time listener:', err);
+          }
+        });
+
+        // 3. Real-time Firestore Settings sync
+        unsubSettings = onSnapshot(doc(db, SETTINGS_COLLECTION, SETTINGS_DOC_ID), (snap) => {
+          if (snap.exists()) {
+            const data = snap.data() as AppSettings;
+            if (data) {
+              setSettings((prev) => ({ ...prev, ...data }));
+            }
+          }
+        }, (err) => {
+          if (err?.code === 'permission-denied') {
+            handleFirestoreError(err, OperationType.GET, `${SETTINGS_COLLECTION}/${SETTINGS_DOC_ID}`);
+          } else {
+            console.warn('[Firestore] Settings real-time listener:', err);
+          }
+        });
+      } catch (err) {
+        console.warn('[Firestore] Listener initialization error:', err);
+      }
+    });
+
     return () => {
       if (bc) bc.close();
+      if (unsubProducts) unsubProducts();
+      if (unsubLogs) unsubLogs();
+      if (unsubSettings) unsubSettings();
       clearInterval(fallbackPollInterval);
       clearInterval(gentleSanitySync);
       document.removeEventListener('visibilitychange', handleWakeOrFocus);
@@ -939,9 +1039,13 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           if (typeof window !== 'undefined') {
             localStorage.setItem('stz_cached_settings', JSON.stringify(data.settings));
           }
+          saveSettingsToFirestore(data.settings);
+        } else {
+          saveSettingsToFirestore(merged);
         }
         return true;
       }
+      saveSettingsToFirestore(merged);
       return false;
     } catch (err) {
       console.error('Error updating settings:', err);
@@ -951,6 +1055,7 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const resetSettings = async (): Promise<boolean> => {
     try {
+      saveSettingsToFirestore(DEFAULT_SETTINGS);
       const res = await fetch('/api/settings/reset', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1003,9 +1108,11 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             localStorage.setItem('stz_saved_products', JSON.stringify(data.products));
           } catch (e) {}
         }
+        batchSyncProductsToFirestore(data.products, data.log ? [data.log] : undefined);
       }
       if (data.log) {
         setStockLogs(prev => [data.log, ...prev]);
+        saveLogToFirestore(data.log);
       }
       return { success: true };
     } catch (err: any) {
@@ -1017,6 +1124,7 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   // Hapus semua produk dari katalog
   const clearAllProducts = async (pin: string): Promise<{ success: boolean; error?: string }> => {
     try {
+      const oldProducts = [...products];
       const res = await fetch('/api/products/clear-all', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1037,8 +1145,12 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       if (typeof window !== 'undefined') {
         localStorage.removeItem('stz_saved_products');
       }
+      for (const p of oldProducts) {
+        deleteProductFromFirestore(p.id);
+      }
       if (data.log) {
         setStockLogs(prev => [data.log, ...prev]);
+        saveLogToFirestore(data.log);
       }
       return { success: true };
     } catch (err: any) {
@@ -1151,6 +1263,10 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       }
       if (data.log) {
         setStockLogs(prev => [data.log, ...prev.filter(l => l.id !== data.log.id)]);
+        saveLogToFirestore(data.log);
+      }
+      if (data.product) {
+        syncProductToFirestore(data.product);
       }
       return true;
     } catch (err) {
@@ -1189,6 +1305,7 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             }
             return Array.from(map.values());
           });
+          batchSyncProductsToFirestore(data.affectedProducts, data.logs);
         }
         if (Array.isArray(data.logs)) {
           setStockLogs(prev => [...data.logs, ...prev].slice(0, 100));
@@ -1247,9 +1364,11 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
               bc.close();
             } catch (e) {}
           }
+          syncProductToFirestore(clonedProduct);
         }
         if (data.log) {
           setStockLogs(prev => [data.log, ...prev].slice(0, 100));
+          saveLogToFirestore(data.log);
         }
         return true;
       }
@@ -1305,9 +1424,11 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
               bc.close();
             } catch (e) {}
           }
+          syncProductToFirestore(clonedProduct);
         }
         if (data.log) {
           setStockLogs(prev => [data.log, ...prev.filter(l => l.id !== data.log.id)].slice(0, 100));
+          saveLogToFirestore(data.log);
         }
         return true;
       }
@@ -1328,6 +1449,7 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const response = await fetch(`/api/products/${id}?${params.toString()}`, {
         method: 'DELETE',
       });
+      deleteProductFromFirestore(id);
       if (response.ok) {
         const data = await response.json().catch(() => ({}));
         setProducts(prev => {

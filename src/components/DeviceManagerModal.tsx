@@ -629,6 +629,24 @@ export const DeviceManagerModal: React.FC<DeviceManagerModalProps> = ({
                     </div>
                   </div>
                 </div>
+
+                {/* Cloud Publish & Realtime Live Status */}
+                <div className="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-50 via-teal-50 to-amber-50 border border-emerald-300 flex items-start gap-3 text-xs shadow-xs">
+                  <div className="p-2 rounded-xl bg-emerald-600 text-white shrink-0 mt-0.5">
+                    <Globe className="w-4 h-4" />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-extrabold text-slate-900">Publikasi Siap Pakai & 100% Gratis</span>
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-200 text-emerald-950 font-black text-[10px]">
+                        Cloud Firebase Real-Time
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-600 leading-relaxed">
+                      Aplikasi ini terhubung langsung ke database cloud Google Firebase (Free Spark Tier). Anda dapat membagikan atau mempublikasikan link toko ini ke seluruh staf secara gratis tanpa biaya server, dan semua pencatatan stok keluar/masuk akan otomatis tersinkronisasi seketika antar perangkat secara real-time.
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
           )}

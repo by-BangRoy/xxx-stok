@@ -697,23 +697,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </button>
                 </div>
 
-                <div className="flex items-center justify-between py-2 border-b border-slate-100">
-                  <div>
-                    <div className="text-xs font-bold text-slate-900">Batas Stok Minimum Default (Safety Stock)</div>
-                    <div className="text-[11px] text-slate-500">
-                      Batas alarm kuning "Stok Menipis" standar untuk produk baru
-                    </div>
-                  </div>
-                  <input
-                    type="number"
-                    min="1"
-                    max="50"
-                    value={defaultMinStock}
-                    onChange={(e) => setDefaultMinStock(parseInt(e.target.value) || 3)}
-                    className="w-20 px-2 py-1.5 text-xs text-center font-bold border border-slate-300 rounded-xl"
-                  />
-                </div>
-
                 <div className="flex items-center justify-between py-2">
                   <div>
                     <div className="text-xs font-bold text-slate-900">Notifikasi Toast Mengambang</div>

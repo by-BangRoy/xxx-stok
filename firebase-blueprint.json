@@ -1,0 +1,72 @@
+{
+  "entities": {
+    "product": {
+      "title": "Product",
+      "description": "Fashion inventory catalog item with variants and stock count",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique product ID" },
+        "name": { "type": "string", "description": "Name of the apparel item" },
+        "category": { "type": "string", "description": "Apparel category" },
+        "sku": { "type": "string", "description": "Product SKU code" },
+        "description": { "type": "string", "description": "Optional notes or details" },
+        "imageUrl": { "type": "string", "description": "Image URL of the apparel" },
+        "location": { "type": "string", "description": "Storage rack or shelf location" },
+        "totalStock": { "type": "number", "description": "Total sum of all variant stocks" },
+        "createdAt": { "type": "string", "description": "ISO timestamp of creation" },
+        "updatedAt": { "type": "string", "description": "ISO timestamp of last update" }
+      },
+      "required": ["id", "name", "category", "totalStock", "createdAt", "updatedAt"]
+    },
+    "stockLog": {
+      "title": "StockLog",
+      "description": "Audit record of stock movement (sale, restock, opname, damage)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique log record ID" },
+        "timestamp": { "type": "string", "description": "ISO timestamp of the mutation" },
+        "productId": { "type": "string", "description": "Associated product ID" },
+        "productName": { "type": "string", "description": "Name of the product" },
+        "variantId": { "type": "string", "description": "Associated variant ID" },
+        "variantDescription": { "type": "string", "description": "Size and color description" },
+        "changeType": { "type": "string", "description": "Type of mutation" },
+        "delta": { "type": "number", "description": "Stock change amount" },
+        "previousStock": { "type": "number", "description": "Stock before mutation" },
+        "newStock": { "type": "number", "description": "Stock after mutation" },
+        "reason": { "type": "string", "description": "Reason or note" },
+        "deviceId": { "type": "string", "description": "ID of recording device" },
+        "deviceName": { "type": "string", "description": "Friendly name of device" },
+        "operatorName": { "type": "string", "description": "Cashier or staff name" }
+      },
+      "required": ["id", "timestamp", "productId", "productName", "changeType", "delta", "previousStock", "newStock"]
+    },
+    "appSettings": {
+      "title": "AppSettings",
+      "description": "Store configuration, PIN security, and profile information",
+      "type": "object",
+      "properties": {
+        "securityPin": { "type": "string", "description": "6-digit security PIN" },
+        "pinRequired": { "type": "boolean", "description": "Whether PIN lock is active" },
+        "autoLockMinutes": { "type": "number", "description": "Minutes before auto-lock" },
+        "soundEnabled": { "type": "boolean", "description": "Notification chime sound status" },
+        "defaultMinStockAlert": { "type": "number", "description": "Default threshold for low stock alert" },
+        "enableStockNotifications": { "type": "boolean", "description": "Whether toasts are enabled" }
+      },
+      "required": ["securityPin", "pinRequired", "defaultMinStockAlert"]
+    }
+  },
+  "firestore": {
+    "/products/{productId}": {
+      "schema": "product",
+      "description": "Collection of all apparel inventory items"
+    },
+    "/stockLogs/{logId}": {
+      "schema": "stockLog",
+      "description": "Audit trail log entries of stock transactions"
+    },
+    "/settings/{settingsDocId}": {
+      "schema": "appSettings",
+      "description": "Global store profile and security settings document"
+    }
+  }
+}

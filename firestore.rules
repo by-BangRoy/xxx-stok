@@ -1,0 +1,54 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128;
+    }
+
+    function isValidProduct(data) {
+      return data.keys().hasAll(['id', 'name', 'category', 'totalStock'])
+        && data.id is string && data.id.size() <= 128
+        && data.name is string && data.name.size() <= 200
+        && data.category is string && data.category.size() <= 100
+        && data.totalStock is number
+        && (!('variants' in data) || (data.variants is list && data.variants.size() <= 200));
+    }
+
+    function isValidStockLog(data) {
+      return data.keys().hasAll(['id', 'timestamp', 'productId', 'productName', 'changeType', 'delta', 'previousStock', 'newStock'])
+        && data.id is string && data.id.size() <= 128
+        && data.productId is string && data.productId.size() <= 128
+        && data.productName is string && data.productName.size() <= 200
+        && data.changeType is string && data.changeType.size() <= 50
+        && data.delta is number
+        && data.previousStock is number
+        && data.newStock is number;
+    }
+
+    function isValidSettings(data) {
+      return data.keys().hasAll(['securityPin', 'pinRequired', 'defaultMinStockAlert'])
+        && data.securityPin is string && data.securityPin.size() <= 32
+        && data.pinRequired is bool
+        && data.defaultMinStockAlert is number;
+    }
+
+    match /products/{productId} {
+      allow read: if true;
+      allow create, update: if isValidId(productId) && isValidProduct(request.resource.data);
+      allow delete: if isValidId(productId);
+    }
+
+    match /stockLogs/{logId} {
+      allow read: if true;
+      allow create: if isValidId(logId) && isValidStockLog(request.resource.data);
+      allow update, delete: if isValidId(logId);
+    }
+
+    match /settings/{settingsDocId} {
+      allow read: if true;
+      allow create, update: if isValidId(settingsDocId) && isValidSettings(request.resource.data);
+      allow delete: if isValidId(settingsDocId);
+    }
+  }
+}
