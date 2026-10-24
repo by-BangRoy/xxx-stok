@@ -47,13 +47,34 @@ function DashboardView() {
   } = useInventory();
 
   // Real-time stock warnings calculation
+  const defaultMinStock = settings.defaultMinStockAlert || 3;
+
   const outOfStockItems = useMemo(() => {
-    return products.filter((p) => p.totalStock === 0 || p.variants.some((v) => v.stock === 0));
+    return products.filter((p) => Number(p.totalStock) === 0 || p.variants.some((v) => Number(v.stock) <= 0));
   }, [products]);
 
   const lowStockItems = useMemo(() => {
-    return products.filter((p) => p.totalStock > 0 && p.variants.some((v) => v.stock <= v.minStock && v.stock > 0));
-  }, [products]);
+    return products.filter((p) => {
+      return p.variants.some((v) => {
+        const vStock = Number(v.stock);
+        const min = Number(v.minStock) > 0 ? Number(v.minStock) : defaultMinStock;
+        return vStock > 0 && vStock <= min;
+      });
+    });
+  }, [products, defaultMinStock]);
+
+  const safeStockItems = useMemo(() => {
+    return products.filter((p) => {
+      const isTotalOut = Number(p.totalStock) === 0;
+      const hasZero = p.variants.some((v) => Number(v.stock) <= 0);
+      const allSafe = p.variants.every((v) => {
+        const vStock = Number(v.stock);
+        const min = Number(v.minStock) > 0 ? Number(v.minStock) : defaultMinStock;
+        return vStock > min;
+      });
+      return !isTotalOut && !hasZero && allSafe;
+    });
+  }, [products, defaultMinStock]);
 
   // Dynamic category list based on existing products with manual entry support
   const categoriesList = useMemo(() => {
@@ -110,11 +131,19 @@ function DashboardView() {
     // Stock Status matches
     let matchesStatus = true;
     if (stockStatusFilter === 'out') {
-      matchesStatus = product.totalStock === 0;
+      matchesStatus = Number(product.totalStock) === 0 || product.variants.some((v) => Number(v.stock) <= 0);
     } else if (stockStatusFilter === 'low') {
-      matchesStatus = product.totalStock > 0 && product.variants.some((v) => v.stock <= v.minStock);
+      matchesStatus = product.variants.some((v) => {
+        const vStock = Number(v.stock);
+        const min = Number(v.minStock) > 0 ? Number(v.minStock) : defaultMinStock;
+        return vStock > 0 && vStock <= min;
+      });
     } else if (stockStatusFilter === 'safe') {
-      matchesStatus = product.totalStock > 0 && product.variants.every((v) => v.stock > v.minStock);
+      matchesStatus = Number(product.totalStock) > 0 && product.variants.every((v) => {
+        const vStock = Number(v.stock);
+        const min = Number(v.minStock) > 0 ? Number(v.minStock) : defaultMinStock;
+        return vStock > min;
+      });
     }
 
     return matchesSearch && matchesCategory && matchesStatus;
@@ -322,9 +351,9 @@ function DashboardView() {
               )}
             </div>
 
-            {/* Sort & View Mode Controls */}
-            <div className="flex items-center gap-2 justify-between sm:justify-end">
-              <div className="flex items-center gap-1.5 text-xs text-slate-600">
+            {/* Sort & View Mode Controls (Smooth touch scroll on mobile) */}
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar shrink-0 sm:shrink sm:overflow-visible">
+              <div className="flex items-center gap-1.5 text-xs text-slate-600 shrink-0">
                 <ArrowUpDown className="w-3.5 h-3.5 text-amber-600" />
                 <select
                   value={sortBy}
@@ -339,7 +368,7 @@ function DashboardView() {
               </div>
 
               {/* Grid / Table Toggle */}
-              <div className="flex items-center bg-yellow-50/80 p-0.5 rounded-xl border border-yellow-200/80">
+              <div className="flex items-center bg-yellow-50/80 p-0.5 rounded-xl border border-yellow-200/80 shrink-0">
                 <button
                   onClick={() => setViewMode('grid')}
                   className={`p-1.5 rounded-lg transition-all ${
@@ -368,23 +397,22 @@ function DashboardView() {
               <button
                 onClick={() => refreshData(true)}
                 disabled={isRefreshing}
-                className="flex items-center gap-1.5 px-3 py-1.5 sm:py-2 bg-amber-100/90 hover:bg-amber-200 active:bg-amber-300 border border-amber-300 text-amber-950 rounded-xl text-xs font-bold transition-all shadow-xs active:scale-95 shrink-0"
+                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 bg-amber-100/90 hover:bg-amber-200 active:bg-amber-300 border border-amber-300 text-amber-950 rounded-xl text-xs font-bold transition-all shadow-xs active:scale-95 shrink-0"
                 title="Segarkan / Refresh data stok real-time sekarang"
               >
                 <RefreshCw className={`w-3.5 h-3.5 text-amber-800 ${isRefreshing ? 'animate-spin' : ''}`} />
-                <span className="hidden xs:inline">{isRefreshing ? 'Sinkron...' : 'Refresh'}</span>
+                <span>{isRefreshing ? 'Sinkron...' : 'Refresh'}</span>
               </button>
 
               {/* Ekspor CSV Button */}
               <button
                 onClick={handleExportCSV}
                 disabled={products.length === 0}
-                className="flex items-center gap-1.5 px-3 py-1.5 sm:py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 active:from-amber-600 active:to-amber-700 disabled:opacity-40 disabled:pointer-events-none text-slate-950 rounded-xl text-xs font-extrabold transition-all shadow-sm active:scale-95 shrink-0"
+                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 active:from-amber-600 active:to-amber-700 disabled:opacity-40 disabled:pointer-events-none text-slate-950 rounded-xl text-xs font-extrabold transition-all shadow-sm active:scale-95 shrink-0"
                 title="Unduh File CSV Rapi (Kompatibel Excel, Google Sheets, WPS)"
               >
                 <Download className="w-3.5 h-3.5" />
-                <span className="hidden xs:inline">Ekspor CSV</span>
-                <span className="xs:hidden">CSV</span>
+                <span>Ekspor CSV</span>
               </button>
 
               {/* Impor CSV Button */}
@@ -395,7 +423,7 @@ function DashboardView() {
                 title="Impor Data dari File CSV"
               >
                 <Upload className="w-3.5 h-3.5 text-amber-800" />
-                <span className="hidden md:inline">{isImporting ? 'Mengimpor...' : 'Impor CSV'}</span>
+                <span>{isImporting ? 'Mengimpor...' : 'Impor CSV'}</span>
               </button>
 
               <input
@@ -436,35 +464,111 @@ function DashboardView() {
                 onClick={() => setStockStatusFilter('all')}
                 className={`px-2.5 py-1 rounded-lg font-semibold text-[11px] transition-all whitespace-nowrap ${
                   stockStatusFilter === 'all'
-                    ? 'bg-amber-200 text-amber-950 border border-amber-300 font-bold'
+                    ? 'bg-amber-300 text-amber-950 border border-amber-400 font-black shadow-xs'
                     : 'bg-yellow-50 text-slate-600 hover:bg-yellow-100 border border-yellow-200/60'
                 }`}
               >
-                Semua Status
-              </button>
-              <button
-                onClick={() => setStockStatusFilter('low')}
-                className={`px-2.5 py-1 rounded-lg font-semibold text-[11px] transition-all whitespace-nowrap ${
-                  stockStatusFilter === 'low'
-                    ? 'bg-amber-400 text-amber-950 border border-amber-500 font-bold'
-                    : 'bg-yellow-50 text-amber-800 hover:bg-yellow-100 border border-yellow-200/60'
-                }`}
-              >
-                ⚠️ Menipis
+                Semua ({products.length})
               </button>
               <button
                 onClick={() => setStockStatusFilter('out')}
-                className={`px-2.5 py-1 rounded-lg font-semibold text-[11px] transition-all whitespace-nowrap ${
+                className={`px-2.5 py-1 rounded-lg font-semibold text-[11px] transition-all whitespace-nowrap flex items-center gap-1 ${
                   stockStatusFilter === 'out'
-                    ? 'bg-rose-500 text-white border border-rose-600 font-bold'
+                    ? 'bg-rose-600 text-white border border-rose-700 font-bold shadow-xs'
                     : 'bg-yellow-50 text-rose-700 hover:bg-yellow-100 border border-yellow-200/60'
                 }`}
               >
-                ⛔ Habis
+                <span>⛔ Habis</span>
+                {outOfStockItems.length > 0 && (
+                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                    stockStatusFilter === 'out' ? 'bg-rose-800 text-white' : 'bg-rose-600 text-white'
+                  }`}>
+                    {outOfStockItems.length}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => setStockStatusFilter('low')}
+                className={`px-2.5 py-1 rounded-lg font-semibold text-[11px] transition-all whitespace-nowrap flex items-center gap-1 ${
+                  stockStatusFilter === 'low'
+                    ? 'bg-amber-400 text-amber-950 border border-amber-500 font-bold shadow-xs'
+                    : 'bg-yellow-50 text-amber-800 hover:bg-yellow-100 border border-yellow-200/60'
+                }`}
+              >
+                <span>⚠️ Menipis</span>
+                {lowStockItems.length > 0 && (
+                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                    stockStatusFilter === 'low' ? 'bg-amber-600 text-slate-950' : 'bg-amber-400 text-slate-950'
+                  }`}>
+                    {lowStockItems.length}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => setStockStatusFilter('safe')}
+                className={`px-2.5 py-1 rounded-lg font-semibold text-[11px] transition-all whitespace-nowrap flex items-center gap-1 ${
+                  stockStatusFilter === 'safe'
+                    ? 'bg-emerald-600 text-white border border-emerald-700 font-bold shadow-xs'
+                    : 'bg-yellow-50 text-emerald-800 hover:bg-yellow-100 border border-yellow-200/60'
+                }`}
+              >
+                <span>✓ Aman</span>
+                {safeStockItems.length > 0 && (
+                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                    stockStatusFilter === 'safe' ? 'bg-emerald-800 text-white' : 'bg-emerald-600 text-white'
+                  }`}>
+                    {safeStockItems.length}
+                  </span>
+                )}
               </button>
             </div>
           </div>
         </div>
+
+        {/* Active Filter Indicator Banner */}
+        {stockStatusFilter === 'out' && (
+          <div className="mb-4 p-3 sm:p-3.5 bg-rose-50 border border-rose-300 rounded-2xl flex items-center justify-between gap-3 text-rose-950 text-xs shadow-xs animate-in fade-in">
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-lg bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                <AlertOctagon className="w-4 h-4" />
+              </div>
+              <div>
+                <span className="font-black text-rose-900 text-xs sm:text-sm">Filter Aktif: Stok Habis (0 Pcs)</span>
+                <p className="text-[11px] text-rose-800/80">
+                  Menampilkan <strong>{sortedProducts.length} model barang</strong> yang memiliki varian / stok fisik 0 pcs.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setStockStatusFilter('all')}
+              className="px-3 py-1.5 bg-white hover:bg-rose-100 border border-rose-300 text-rose-900 text-xs font-bold rounded-xl transition-colors shrink-0 shadow-xs active:scale-95"
+            >
+              Tampilkan Semua
+            </button>
+          </div>
+        )}
+
+        {stockStatusFilter === 'low' && (
+          <div className="mb-4 p-3 sm:p-3.5 bg-amber-50 border border-amber-300 rounded-2xl flex items-center justify-between gap-3 text-amber-950 text-xs shadow-xs animate-in fade-in">
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-lg bg-amber-500 text-slate-950 flex items-center justify-center shrink-0 shadow-xs">
+                <AlertTriangle className="w-4 h-4" />
+              </div>
+              <div>
+                <span className="font-black text-amber-950 text-xs sm:text-sm">Filter Aktif: Stok Menipis</span>
+                <p className="text-[11px] text-amber-900/80">
+                  Menampilkan <strong>{sortedProducts.length} model barang</strong> dengan stok fisik di bawah batas minimum.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setStockStatusFilter('all')}
+              className="px-3 py-1.5 bg-white hover:bg-amber-100 border border-amber-300 text-amber-950 text-xs font-bold rounded-xl transition-colors shrink-0 shadow-xs active:scale-95"
+            >
+              Tampilkan Semua
+            </button>
+          </div>
+        )}
 
         {/* Catalog Items Display */}
         {products.length === 0 ? (
@@ -530,6 +634,7 @@ function DashboardView() {
             products={sortedProducts}
             onOpenAdjust={handleOpenAdjust}
             onOpenEdit={handleOpenEdit}
+            filterStatus={stockStatusFilter}
           />
         )}
       </main>

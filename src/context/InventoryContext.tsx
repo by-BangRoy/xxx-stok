@@ -246,10 +246,11 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const refreshData = useCallback(async (manual = false) => {
     if (manual) setIsRefreshing(true);
     try {
-      const [resInv, resLogs, resSettings] = await Promise.all([
+      const [resInv, resLogs, resSettings, resDevices] = await Promise.all([
         fetch('/api/inventory'),
         fetch('/api/logs?limit=50'),
         fetch('/api/settings'),
+        fetch('/api/devices').catch(() => null),
       ]);
       if (resInv.ok) {
         const invData = await resInv.json();
@@ -283,6 +284,15 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           setSettings(settingsData.settings);
           if (typeof window !== 'undefined') {
             localStorage.setItem('stz_cached_settings', JSON.stringify(settingsData.settings));
+          }
+        }
+      }
+      if (resDevices && resDevices.ok) {
+        const devicesData = await resDevices.json();
+        if (devicesData && Array.isArray(devicesData.devices)) {
+          setConnectedDevices(devicesData.devices);
+          if (typeof devicesData.count === 'number') {
+            setConnectedDevicesCount(devicesData.count);
           }
         }
       }
@@ -515,8 +525,8 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           setStockLogs(prev => [log, ...prev.filter(l => l.id !== log.id).slice(0, 100)]);
         }
 
-        const isAnyOut = product?.totalStock === 0 || product?.variants?.some((v: any) => v.stock === 0) || Boolean(isOutOfStock);
-        const isAnyLow = (product?.variants?.some((v: any) => v.stock <= v.minStock && v.stock > 0) && !isAnyOut) || Boolean(isLowStock);
+        const isAnyOut = Number(product?.totalStock) === 0 || product?.variants?.some((v: any) => Number(v.stock) <= 0) || Boolean(isOutOfStock);
+        const isAnyLow = (product?.variants?.some((v: any) => Number(v.stock) <= Number(v.minStock) && Number(v.stock) > 0) && !isAnyOut) || Boolean(isLowStock);
 
         // Notification and sound
         if (isAnyOut) {
@@ -564,6 +574,19 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             title: isRemote ? `📦 Restock Baru dari ${senderDevice}` : '✓ Restock Berhasil',
             message: `${log?.productName} (${log?.variantDescription}): bertambah +${log?.delta} pcs. Total stok: ${log?.newStock} pcs.`,
             type: 'restock',
+            deviceName: senderDevice,
+            operatorName: senderOperator,
+            isRemote,
+            productName: log?.productName || 'Barang',
+            delta: log?.delta,
+            newStock: log?.newStock,
+          });
+        } else if (log?.changeType === 'damage') {
+          playChime('warning');
+          addNotificationToast({
+            title: isRemote ? `⚠️ Barang Rusak dari ${senderDevice}` : '⚠️ Barang Rusak / Reject Dicatat',
+            message: `${log?.productName} (${log?.variantDescription}): -${Math.abs(log?.delta || 1)} pcs (${log?.reason || 'Cacat/Rusak'}). Sisa stok: ${log?.newStock} pcs.`,
+            type: 'danger',
             deviceName: senderDevice,
             operatorName: senderOperator,
             isRemote,
@@ -743,6 +766,9 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         },
       };
       setSettings(merged);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('stz_cached_settings', JSON.stringify(merged));
+      }
 
       const res = await fetch('/api/settings', {
         method: 'POST',
@@ -754,7 +780,18 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           operatorName: currentDevice.operatorName,
         }),
       });
-      return res.ok;
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.settings) {
+          setSettings(data.settings);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('stz_cached_settings', JSON.stringify(data.settings));
+          }
+        }
+        return true;
+      }
+      return false;
     } catch (err) {
       console.error('Error updating settings:', err);
       return false;

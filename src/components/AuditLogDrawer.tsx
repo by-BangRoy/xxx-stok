@@ -141,7 +141,7 @@ export const AuditLogDrawer: React.FC<AuditLogDrawerProps> = ({ isOpen, onClose 
             />
           </div>
 
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs no-scrollbar">
             <button
               onClick={() => setFilterType('all')}
               className={`px-3 py-1 rounded-full font-bold whitespace-nowrap transition-all ${
@@ -160,7 +160,7 @@ export const AuditLogDrawer: React.FC<AuditLogDrawerProps> = ({ isOpen, onClose 
                   : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
               }`}
             >
-              Penjualan
+              Penjualan ({stockLogs.filter((l) => l.changeType === 'sale').length})
             </button>
             <button
               onClick={() => setFilterType('restock')}
@@ -170,7 +170,18 @@ export const AuditLogDrawer: React.FC<AuditLogDrawerProps> = ({ isOpen, onClose 
                   : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
               }`}
             >
-              Restock Masuk
+              Restock ({stockLogs.filter((l) => l.changeType === 'restock').length})
+            </button>
+            <button
+              onClick={() => setFilterType('damage')}
+              className={`px-3 py-1 rounded-full font-bold whitespace-nowrap transition-all flex items-center gap-1 ${
+                filterType === 'damage'
+                  ? 'bg-rose-600 text-white'
+                  : 'bg-white border border-rose-200 text-rose-700 hover:bg-rose-50'
+              }`}
+            >
+              <AlertTriangle className="w-3 h-3" />
+              <span>Cacat/Rusak ({stockLogs.filter((l) => l.changeType === 'damage').length})</span>
             </button>
             <button
               onClick={() => setFilterType('return')}
@@ -180,17 +191,17 @@ export const AuditLogDrawer: React.FC<AuditLogDrawerProps> = ({ isOpen, onClose 
                   : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
               }`}
             >
-              Retur
+              Retur ({stockLogs.filter((l) => l.changeType === 'return').length})
             </button>
             <button
-              onClick={() => setFilterType('damage')}
+              onClick={() => setFilterType('adjustment')}
               className={`px-3 py-1 rounded-full font-bold whitespace-nowrap transition-all ${
-                filterType === 'damage'
-                  ? 'bg-rose-600 text-white'
+                filterType === 'adjustment'
+                  ? 'bg-slate-800 text-white'
                   : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
               }`}
             >
-              Cacat/Reject
+              Opname ({stockLogs.filter((l) => l.changeType === 'adjustment').length})
             </button>
           </div>
         </div>

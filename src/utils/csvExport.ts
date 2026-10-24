@@ -235,7 +235,7 @@ export function parseInventoryCSV(csvText: string): Partial<Product>[] {
       name,
       category: data.category,
       imageUrl: '/assets/aistudio/WhatsApp_Image_2026-10-20_at_14.00.08_44e1b065.jpeg',
-      description: 'Diimpor dari file rekap stok CSV',
+      description: '',
       variants: data.variants,
     });
   }

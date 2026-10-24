@@ -7,6 +7,7 @@ import {
   Minus, 
   MapPin, 
   AlertTriangle, 
+  AlertOctagon,
   Edit3, 
   SlidersHorizontal
 } from 'lucide-react';
@@ -22,14 +23,35 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   onOpenAdjust,
   onOpenEdit,
 }) => {
-  const { adjustStock } = useInventory();
-  const [selectedVariantId, setSelectedVariantId] = useState<string>(product.variants[0]?.id || '');
+  const { adjustStock, settings } = useInventory();
+  const defaultMin = settings.defaultMinStockAlert || 3;
+  const defaultVar = product.variants.find((v) => Number(v.stock) <= 0) || product.variants[0];
+  const [selectedVariantId, setSelectedVariantId] = useState<string>(defaultVar?.id || '');
   const [quickAdjustingId, setQuickAdjustingId] = useState<string | null>(null);
 
   const selectedVariant = product.variants.find((v) => v.id === selectedVariantId) || product.variants[0];
 
-  const isOutOfStock = product.totalStock === 0;
-  const isAnyVariantLow = product.variants.some((v) => v.stock <= v.minStock && v.stock > 0);
+  const isTotalOut = Number(product.totalStock) === 0;
+  const zeroVariants = product.variants.filter((v) => Number(v.stock) <= 0);
+  const hasZeroVariant = zeroVariants.length > 0;
+  const lowVariants = product.variants.filter((v) => {
+    const vStock = Number(v.stock);
+    const min = Number(v.minStock) > 0 ? Number(v.minStock) : defaultMin;
+    return vStock > 0 && vStock <= min;
+  });
+  const hasLowVariant = lowVariants.length > 0;
+
+  // Sort variants so out of stock (0 pcs) and low stock variants appear first
+  const sortedVariants = [...product.variants].sort((a, b) => {
+    const aOut = Number(a.stock) <= 0 ? 0 : 1;
+    const bOut = Number(b.stock) <= 0 ? 0 : 1;
+    if (aOut !== bOut) return aOut - bOut;
+    const aMin = Number(a.minStock) > 0 ? Number(a.minStock) : defaultMin;
+    const bMin = Number(b.minStock) > 0 ? Number(b.minStock) : defaultMin;
+    const aLow = Number(a.stock) <= aMin ? 0 : 1;
+    const bLow = Number(b.stock) <= bMin ? 0 : 1;
+    return aLow - bLow;
+  });
 
   // Quick 1-click stock adjust (+1 restock or -1 sale)
   const handleQuickAdjust = async (e: React.MouseEvent, variant: ProductVariant, delta: number) => {
@@ -95,14 +117,20 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           )}
 
           <div>
-            {isOutOfStock ? (
-              <span className="text-[10px] sm:text-[11px] font-black bg-rose-600 text-white px-2 py-0.5 rounded shadow">
-                0 pcs (0 lusin)
+            {isTotalOut ? (
+              <span className="text-[10px] sm:text-[11px] font-black bg-rose-600 text-white px-2 py-0.5 rounded shadow flex items-center gap-1 animate-pulse">
+                <AlertOctagon className="w-3 h-3 text-white" />
+                <span>0 pcs (TOTAL HABIS)</span>
               </span>
-            ) : isAnyVariantLow ? (
+            ) : hasZeroVariant ? (
+              <span className="text-[10px] sm:text-[11px] font-black bg-rose-600 text-white px-2 py-0.5 rounded shadow flex items-center gap-1">
+                <AlertOctagon className="w-3 h-3 text-white" />
+                <span>{product.totalStock} pcs ({zeroVariants.length} Varian Habis)</span>
+              </span>
+            ) : hasLowVariant ? (
               <span className="text-[10px] sm:text-[11px] font-black bg-amber-500 text-slate-950 px-2 py-0.5 rounded shadow flex items-center gap-1">
                 <AlertTriangle className="w-3 h-3 text-slate-950" />
-                {product.totalStock} pcs ({formatLusin(product.totalStock)})
+                <span>{product.totalStock} pcs (Menipis)</span>
               </span>
             ) : (
               <span className="text-[10px] sm:text-[11px] font-bold bg-emerald-600/95 text-white px-2 py-0.5 rounded shadow">
@@ -122,7 +150,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             </h3>
           </div>
 
-          {product.description && (
+          {product.description && !/di+mport\s+dari\s+file\s+rekap\s+stok\s+csv/i.test(product.description) && (
             <p className="text-xs text-slate-500 line-clamp-1 mb-2">
               {product.description}
             </p>
@@ -136,18 +164,24 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             </div>
 
             <div className="grid grid-cols-1 gap-1 max-h-36 overflow-y-auto pr-0.5">
-              {product.variants.map((variant) => {
+              {sortedVariants.map((variant) => {
                 const isSelected = variant.id === selectedVariant?.id;
-                const isLow = variant.stock <= variant.minStock && variant.stock > 0;
-                const isOut = variant.stock === 0;
+                const vStock = Number(variant.stock) || 0;
+                const vMin = Number(variant.minStock) > 0 ? Number(variant.minStock) : defaultMin;
+                const isOut = vStock <= 0;
+                const isLow = vStock <= vMin && vStock > 0;
 
                 return (
                   <div
                     key={variant.id}
                     onClick={() => setSelectedVariantId(variant.id)}
-                    className={`p-1.5 rounded-xl border text-xs flex items-center justify-between transition-all cursor-pointer ${
+                    className={`p-1.5 sm:p-2 rounded-xl border text-xs flex items-center justify-between transition-all cursor-pointer ${
                       isSelected
-                        ? 'border-amber-400 bg-amber-50/80 ring-1 ring-amber-400/40'
+                        ? isOut
+                          ? 'border-rose-500 bg-rose-50 ring-2 ring-rose-400/40'
+                          : 'border-amber-400 bg-amber-50/80 ring-1 ring-amber-400/40'
+                        : isOut
+                        ? 'border-rose-300 bg-rose-50/40'
                         : 'border-yellow-100 hover:border-yellow-300 bg-yellow-50/30'
                     }`}
                   >
@@ -162,7 +196,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                       <span className="text-slate-400 text-[11px] truncate">({variant.color})</span>
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
                       <span
                         className={`font-black text-xs px-2 py-0.5 rounded-md shadow-xs ${
                           isOut
@@ -172,28 +206,28 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                             : 'bg-emerald-50 text-emerald-900 border border-emerald-200 font-bold'
                         }`}
                       >
-                        {quickAdjustingId === variant.id ? '...' : isOut ? '0 pcs (Habis)' : isLow ? `${variant.stock} pcs (Menipis)` : `${variant.stock} pcs`}
+                        {quickAdjustingId === variant.id ? '...' : isOut ? '0 pcs (HABIS)' : isLow ? `${vStock} pcs (MENIPIS)` : `${vStock} pcs`}
                       </span>
 
-                      {/* Quick 1-click +/- touch buttons */}
+                      {/* Quick 1-click +/- touch buttons (finger friendly on mobile) */}
                       <div className="flex items-center gap-1">
                         <button
                           type="button"
                           disabled={variant.stock <= 0 || quickAdjustingId === variant.id}
                           onClick={(e) => handleQuickAdjust(e, variant, -1)}
-                          className="w-6 h-6 rounded-lg bg-white hover:bg-rose-100 border border-slate-200 text-slate-700 hover:text-rose-600 flex items-center justify-center disabled:opacity-30 disabled:pointer-events-none active:scale-90 transition-all shadow-xs"
+                          className="w-7 h-7 rounded-lg bg-white hover:bg-rose-100 border border-slate-200 text-slate-700 hover:text-rose-600 flex items-center justify-center disabled:opacity-30 disabled:pointer-events-none active:scale-90 transition-all shadow-xs"
                           title="Kurang 1 (Barang Keluar)"
                         >
-                          <Minus className="w-3.5 h-3.5" />
+                          <Minus className="w-3.5 h-3.5 stroke-[2.5]" />
                         </button>
                         <button
                           type="button"
                           disabled={quickAdjustingId === variant.id}
                           onClick={(e) => handleQuickAdjust(e, variant, 1)}
-                          className="w-6 h-6 rounded-lg bg-white hover:bg-emerald-100 border border-slate-200 text-slate-700 hover:text-emerald-600 flex items-center justify-center disabled:opacity-30 disabled:pointer-events-none active:scale-90 transition-all shadow-xs"
+                          className="w-7 h-7 rounded-lg bg-white hover:bg-emerald-100 border border-slate-200 text-slate-700 hover:text-emerald-600 flex items-center justify-center disabled:opacity-30 disabled:pointer-events-none active:scale-90 transition-all shadow-xs"
                           title="Tambah 1 (Barang Masuk)"
                         >
-                          <Plus className="w-3.5 h-3.5" />
+                          <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
                         </button>
                       </div>
                     </div>

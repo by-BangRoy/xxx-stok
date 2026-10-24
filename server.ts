@@ -50,6 +50,16 @@ function loadData() {
     if (fs.existsSync(INVENTORY_FILE)) {
       const raw = fs.readFileSync(INVENTORY_FILE, 'utf-8');
       products = JSON.parse(raw);
+      let modified = false;
+      for (const p of products) {
+        if (p.description && /di+mport\s+dari\s+file\s+rekap\s+stok\s+csv/i.test(p.description)) {
+          p.description = '';
+          modified = true;
+        }
+      }
+      if (modified) {
+        saveInventory();
+      }
     } else {
       products = [];
       saveInventory();
@@ -177,6 +187,7 @@ function broadcastPresence() {
       ip: c.ip,
       lastSeen: new Date().toISOString(),
       userAgent: c.userAgent,
+      connectedAt: c.connectedAt,
     });
   }
   const devices: DeviceInfo[] = Array.from(uniqueMap.values());
@@ -294,8 +305,8 @@ app.post('/api/stock/adjust', (req, res) => {
     payload: {
       product,
       log: newLog,
-      isLowStock: newStock <= variant.minStock,
-      isOutOfStock: newStock === 0,
+      isLowStock: newStock <= variant.minStock && newStock > 0,
+      isOutOfStock: newStock === 0 || product.totalStock === 0,
     },
     meta: {
       deviceId,
@@ -401,7 +412,7 @@ app.post('/api/products', (req, res) => {
     sku: typeof body.sku === 'string' ? body.sku.trim() : '',
     name: body.name || 'Produk Baru',
     category: body.category || 'Umum',
-    description: body.description || '',
+    description: (body.description && !/di+mport\s+dari\s+file\s+rekap\s+stok\s+csv/i.test(body.description)) ? body.description.trim() : '',
     imageUrl: body.imageUrl || '/assets/aistudio/WhatsApp_Image_2026-10-20_at_14.00.08_44e1b065.jpeg',
     location: body.location || 'Gudang Utama',
     variants: (body.variants || []).map((v: any, index: number) => ({
@@ -489,7 +500,9 @@ app.put('/api/products/:id', (req, res) => {
     sku: body.sku !== undefined ? (typeof body.sku === 'string' ? body.sku.trim() : '') : existingProduct.sku,
     name: body.name || existingProduct.name,
     category: body.category || existingProduct.category,
-    description: body.description !== undefined ? body.description : existingProduct.description,
+    description: body.description !== undefined 
+      ? ((body.description && !/di+mport\s+dari\s+file\s+rekap\s+stok\s+csv/i.test(body.description)) ? body.description.trim() : '')
+      : ((existingProduct.description && !/di+mport\s+dari\s+file\s+rekap\s+stok\s+csv/i.test(existingProduct.description)) ? existingProduct.description : ''),
     imageUrl: body.imageUrl || existingProduct.imageUrl,
     location: body.location || existingProduct.location,
     variants: updatedVariants,

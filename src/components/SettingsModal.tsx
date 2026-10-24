@@ -27,9 +27,14 @@ import {
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  initialTab?: 'profile' | 'security' | 'preferences' | 'danger';
 }
 
-export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
+export const SettingsModal: React.FC<SettingsModalProps> = ({ 
+  isOpen, 
+  onClose,
+  initialTab = 'profile'
+}) => {
   const { 
     settings, 
     updateSettings, 
@@ -45,12 +50,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
     lockApp
   } = useInventory();
 
-  const [activeTab, setActiveTab] = useState<'profile' | 'security' | 'preferences' | 'danger'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'security' | 'preferences' | 'danger'>(initialTab);
+  const wasOpenRef = React.useRef(false);
 
   // Profile Form state
-  const [profile, setProfile] = useState<StoreProfile>({ ...settings.profile });
+  const [profile, setProfile] = useState<StoreProfile>({
+    storeName: settings.profile?.storeName || '',
+    storeBranch: settings.profile?.storeBranch || '',
+    tagline: settings.profile?.tagline || '',
+    phone: settings.profile?.phone || '',
+    address: settings.profile?.address || '',
+    ownerName: settings.profile?.ownerName || '',
+    socialMedia: settings.profile?.socialMedia || '',
+  });
   const [deviceName, setDeviceName] = useState(currentDevice.deviceName);
   const [operatorName, setOperatorName] = useState(currentDevice.operatorName);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [profileMsg, setProfileMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Security / PIN Form state
   const [currentPinInput, setCurrentPinInput] = useState('');
@@ -61,7 +77,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
 
   // Preferences Form state
   const [soundEnabled, setSoundEnabled] = useState(settings.soundEnabled);
-  const [defaultMinStock, setDefaultMinStock] = useState(settings.defaultMinStockAlert);
   const [enableStockNotifications, setEnableStockNotifications] = useState(settings.enableStockNotifications);
 
   // Clear stock confirmation dialog state
@@ -90,34 +105,69 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
 
   const [saveSuccessMsg, setSaveSuccessMsg] = useState(false);
 
-  // Lock body scroll and sync state when modal is open
+  // Lock body scroll and sync state when modal is opened (only on initial open to prevent wiping typed inputs)
   useEffect(() => {
     if (isOpen) {
-      setProfile({ ...settings.profile });
-      setPinRequired(settings.pinRequired);
-      setSoundEnabled(settings.soundEnabled);
-      setDefaultMinStock(settings.defaultMinStockAlert);
-      setEnableStockNotifications(settings.enableStockNotifications);
-      setDeviceName(currentDevice.deviceName);
-      setOperatorName(currentDevice.operatorName);
-
+      if (initialTab) {
+        setActiveTab(initialTab);
+      }
+      if (!wasOpenRef.current) {
+        setProfile({
+          storeName: settings.profile?.storeName || '',
+          storeBranch: settings.profile?.storeBranch || '',
+          tagline: settings.profile?.tagline || '',
+          phone: settings.profile?.phone || '',
+          address: settings.profile?.address || '',
+          ownerName: settings.profile?.ownerName || '',
+          socialMedia: settings.profile?.socialMedia || '',
+        });
+        setPinRequired(settings.pinRequired);
+        setSoundEnabled(settings.soundEnabled);
+        setEnableStockNotifications(settings.enableStockNotifications);
+        setDeviceName(currentDevice.deviceName);
+        setOperatorName(currentDevice.operatorName);
+        setProfileMsg(null);
+        setPinChangeMsg(null);
+        setSaveSuccessMsg(false);
+      }
       const originalStyle = window.getComputedStyle(document.body).overflow;
       document.body.style.overflow = 'hidden';
       return () => {
         document.body.style.overflow = originalStyle;
       };
     }
-  }, [isOpen, settings, currentDevice]);
+    wasOpenRef.current = isOpen;
+  }, [isOpen, initialTab]);
 
   if (!isOpen) return null;
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    updateDeviceProfile(deviceName.trim(), operatorName.trim());
-    const ok = await updateSettings({ profile });
-    if (ok) {
-      setSaveSuccessMsg(true);
-      setTimeout(() => setSaveSuccessMsg(false), 2500);
+    setIsSavingProfile(true);
+    setProfileMsg(null);
+    try {
+      updateDeviceProfile(deviceName.trim() || 'Perangkat Toko', operatorName.trim() || 'Staf');
+      const cleanedProfile: StoreProfile = {
+        storeName: (profile.storeName || '').trim(),
+        storeBranch: (profile.storeBranch || '').trim(),
+        tagline: (profile.tagline || '').trim(),
+        phone: (profile.phone || '').trim(),
+        address: (profile.address || '').trim(),
+        ownerName: (profile.ownerName || '').trim(),
+        socialMedia: (profile.socialMedia || '').trim(),
+      };
+      const ok = await updateSettings({ profile: cleanedProfile });
+      if (ok) {
+        setProfile(cleanedProfile);
+        setProfileMsg({ type: 'success', text: '✓ Profil toko & staf berhasil disimpan dan disinkronkan ke semua perangkat!' });
+        setTimeout(() => setProfileMsg(null), 3500);
+      } else {
+        setProfileMsg({ type: 'error', text: 'Gagal menyimpan profil toko ke server. Silakan periksa koneksi internet.' });
+      }
+    } catch (err: any) {
+      setProfileMsg({ type: 'error', text: err?.message || 'Terjadi kesalahan saat menyimpan profil' });
+    } finally {
+      setIsSavingProfile(false);
     }
   };
 

@@ -77,12 +77,12 @@ export const Navbar: React.FC<NavbarProps> = ({
             <div className="flex items-center gap-2">
               <button
                 onClick={onOpenDeviceManager}
-                className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-full text-xs font-semibold border transition-all ${
+                className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-full text-xs font-semibold border transition-all hover:scale-105 active:scale-95 ${
                   connectionStatus === 'connected'
-                    ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/60 shadow-sm'
-                    : 'bg-amber-950/60 border-amber-500/40 text-amber-300'
+                    ? 'bg-emerald-950/70 border-emerald-500/50 text-emerald-300 hover:bg-emerald-900/80 shadow-sm'
+                    : 'bg-amber-950/70 border-amber-500/50 text-amber-300 hover:bg-amber-900/80'
                 }`}
-                title="Status sinkronisasi antar perangkat"
+                title="Klik untuk cek daftar siapa saja perangkat yang tersambung online & detail perangkat"
               >
                 <span className="relative flex h-2 w-2 sm:h-2.5 sm:w-2.5">
                   <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
@@ -96,7 +96,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   {connectionStatus === 'connected' ? 'Sinkron:' : 'Menghubungkan:'}
                 </span>
                 <span className="font-bold text-[11px] sm:text-xs">
-                  {connectedDevicesCount} <span className="hidden xs:inline">HP/PC</span>
+                  {connectedDevicesCount} <span className="hidden xs:inline">Online</span>
                 </span>
               </button>
 

@@ -80,6 +80,7 @@ export interface DeviceInfo {
   ip?: string;
   lastSeen: string;
   userAgent?: string;
+  connectedAt?: string;
 }
 
 export interface StoreProfile {

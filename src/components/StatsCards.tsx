@@ -21,14 +21,29 @@ export const StatsCards: React.FC<StatsCardsProps> = ({
   onResetFilter,
   activeFilter,
 }) => {
-  const { products, stockLogs } = useInventory();
+  const { products, stockLogs, settings } = useInventory();
+  const defaultMin = settings.defaultMinStockAlert || 3;
 
   const totalModels = products.length;
-  const totalUnits = products.reduce((sum, p) => sum + p.totalStock, 0);
+  const totalUnits = products.reduce((sum, p) => sum + Number(p.totalStock || 0), 0);
 
-  const outOfStockProducts = products.filter((p) => p.totalStock === 0).length;
-  const lowStockProducts = products.filter(
-    (p) => p.totalStock > 0 && p.variants.some((v) => v.stock <= v.minStock)
+  // Products with total stock = 0
+  const totallyOutOfStockProducts = products.filter(
+    (p) => Number(p.totalStock) === 0
+  ).length;
+
+  // Products with ANY variant at 0 pcs (including total stock = 0)
+  const outOfStockProducts = products.filter(
+    (p) => Number(p.totalStock) === 0 || p.variants.some((v) => Number(v.stock) <= 0)
+  ).length;
+
+  // Products with variants that are low (stock > 0 and <= minStock)
+  const lowStockProducts = products.filter((p) =>
+    p.variants.some((v) => {
+      const vStock = Number(v.stock);
+      const min = Number(v.minStock) > 0 ? Number(v.minStock) : defaultMin;
+      return vStock > 0 && vStock <= min;
+    })
   ).length;
 
   const todayLogsCount = stockLogs.filter((l) => {
@@ -41,14 +56,14 @@ export const StatsCards: React.FC<StatsCardsProps> = ({
   }).length;
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2.5 sm:gap-4 mb-5">
+    <div className="grid grid-cols-2 lg:grid-cols-5 gap-2 sm:gap-3.5 mb-4 sm:mb-5">
       {/* 1. Total Unit Stok */}
       <div 
         onClick={onResetFilter}
-        className={`p-3.5 sm:p-4 rounded-2xl border transition-all cursor-pointer ${
+        className={`p-3 sm:p-4 rounded-2xl border transition-all cursor-pointer ${
           activeFilter === 'all'
             ? 'bg-gradient-to-br from-slate-900 to-slate-800 text-white border-yellow-500/40 shadow-md ring-2 ring-amber-400/50'
-            : 'bg-white hover:border-yellow-300 text-slate-800 border-yellow-200/90 shadow-sm'
+            : 'bg-white hover:border-yellow-300 text-slate-800 border-yellow-200/90 shadow-xs'
         }`}
       >
         <div className="flex items-center justify-between mb-1.5 sm:mb-2">
@@ -97,13 +112,13 @@ export const StatsCards: React.FC<StatsCardsProps> = ({
       {/* 3. Stok Menipis */}
       <div
         onClick={onFilterLowStock}
-        className={`p-3.5 sm:p-4 rounded-2xl border transition-all cursor-pointer ${
+        className={`p-3 sm:p-4 rounded-2xl border transition-all cursor-pointer ${
           activeFilter === 'low'
             ? 'bg-amber-500 text-slate-950 font-bold border-amber-600 shadow-md ring-2 ring-amber-300'
-            : 'bg-white hover:border-amber-300 text-slate-800 border-yellow-200/90 shadow-sm'
+            : 'bg-white hover:border-amber-300 text-slate-800 border-yellow-200/90 shadow-xs'
         }`}
       >
-        <div className="flex items-center justify-between mb-1.5 sm:mb-2">
+        <div className="flex items-center justify-between mb-1 sm:mb-2">
           <span className={`text-[11px] sm:text-xs font-bold uppercase tracking-wider ${
             activeFilter === 'low' ? 'text-slate-950' : 'text-amber-800'
           }`}>
@@ -121,21 +136,21 @@ export const StatsCards: React.FC<StatsCardsProps> = ({
           {lowStockProducts}
           <span className="text-xs font-normal ml-1 opacity-80">model</span>
         </div>
-        <div className={`text-[10px] sm:text-[11px] mt-0.5 sm:mt-1 ${activeFilter === 'low' ? 'text-slate-800' : 'text-slate-400'}`}>
-          Perlu restock
+        <div className={`text-[10px] sm:text-[11px] mt-0.5 sm:mt-1 truncate ${activeFilter === 'low' ? 'text-slate-900 font-semibold' : lowStockProducts > 0 ? 'text-amber-700 font-bold' : 'text-slate-400'}`}>
+          {lowStockProducts > 0 ? 'Stok ≤ batas min' : 'Stok aman'}
         </div>
       </div>
 
       {/* 4. Stok Habis (0) */}
       <div
         onClick={onFilterOutOfStock}
-        className={`p-3.5 sm:p-4 rounded-2xl border transition-all cursor-pointer ${
+        className={`p-3 sm:p-4 rounded-2xl border transition-all cursor-pointer ${
           activeFilter === 'out'
             ? 'bg-rose-600 text-white border-rose-700 shadow-md ring-2 ring-rose-400'
-            : 'bg-white hover:border-rose-300 text-slate-800 border-yellow-200/90 shadow-sm'
+            : 'bg-white hover:border-rose-300 text-slate-800 border-yellow-200/90 shadow-xs'
         }`}
       >
-        <div className="flex items-center justify-between mb-1.5 sm:mb-2">
+        <div className="flex items-center justify-between mb-1 sm:mb-2">
           <span className={`text-[11px] sm:text-xs font-bold uppercase tracking-wider ${
             activeFilter === 'out' ? 'text-white' : 'text-rose-700'
           }`}>
@@ -153,14 +168,18 @@ export const StatsCards: React.FC<StatsCardsProps> = ({
           {outOfStockProducts}
           <span className="text-xs font-normal ml-1 opacity-80">model</span>
         </div>
-        <div className={`text-[10px] sm:text-[11px] mt-0.5 sm:mt-1 ${activeFilter === 'out' ? 'text-rose-100' : 'text-slate-400'}`}>
-          Perlu produksi
+        <div className={`text-[10px] sm:text-[11px] mt-0.5 sm:mt-1 truncate ${activeFilter === 'out' ? 'text-rose-100 font-bold' : outOfStockProducts > 0 ? 'text-rose-600 font-bold' : 'text-slate-400'}`}>
+          {outOfStockProducts > 0 
+            ? totallyOutOfStockProducts > 0 
+              ? `${totallyOutOfStockProducts} total • ${outOfStockProducts - totallyOutOfStockProducts} varian` 
+              : `${outOfStockProducts} varian 0 pcs`
+            : 'Semua tersedia'}
         </div>
       </div>
 
       {/* 5. Aktivitas Real-Time Hari Ini */}
-      <div className="p-3.5 sm:p-4 rounded-2xl bg-white border border-yellow-200/90 shadow-sm col-span-2 md:col-span-1">
-        <div className="flex items-center justify-between mb-1.5 sm:mb-2">
+      <div className="p-3 sm:p-4 rounded-2xl bg-white border border-yellow-200/90 shadow-xs col-span-2 lg:col-span-1">
+        <div className="flex items-center justify-between mb-1 sm:mb-2">
           <span className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-500">
             Aktivitas Hari Ini
           </span>
@@ -174,7 +193,7 @@ export const StatsCards: React.FC<StatsCardsProps> = ({
         </div>
         <div className="text-[10px] sm:text-[11px] text-amber-800 font-semibold mt-0.5 sm:mt-1 flex items-center gap-1">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-          Real-time aktif
+          <span>Real-time aktif</span>
         </div>
       </div>
     </div>

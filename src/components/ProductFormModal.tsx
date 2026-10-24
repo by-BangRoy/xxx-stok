@@ -29,7 +29,10 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   // Kategori dikosongkan secara default agar pengguna bisa input manual
   const [category, setCategory] = useState(product?.category || '');
   const [imageUrl, setImageUrl] = useState(product?.imageUrl || DEFAULT_IMAGE);
-  const [description, setDescription] = useState(product?.description || '');
+  const cleanInitialDesc = product?.description && /di+mport\s+dari\s+file\s+rekap\s+stok\s+csv/i.test(product.description)
+    ? ''
+    : (product?.description || '');
+  const [description, setDescription] = useState(cleanInitialDesc);
 
   const [variants, setVariants] = useState<ProductVariant[]>(
     product?.variants || [
