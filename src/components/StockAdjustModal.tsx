@@ -26,6 +26,7 @@ import {
   Sparkles,
   ExternalLink
 } from 'lucide-react';
+import { ProductBarcode } from './ProductBarcode.tsx';
 
 interface StockAdjustModalProps {
   product: Product;
@@ -405,20 +406,37 @@ export const StockAdjustModal: React.FC<StockAdjustModalProps> = ({
                 </div>
               </div>
 
-              {/* Active Variant Quick Bar */}
-              <div className="px-3 py-2 bg-yellow-50/80 rounded-xl border border-yellow-200 flex items-center justify-between text-xs">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-slate-500">Varian aktif:</span>
-                  <span className="font-extrabold text-slate-900 bg-white px-2 py-0.5 rounded border border-yellow-300">
-                    {currentVariant.size} • {currentVariant.color}
-                  </span>
+              {/* Active Variant Quick Bar & Barcode */}
+              <div className="px-3 py-2 bg-yellow-50/80 rounded-xl border border-yellow-200 flex flex-col gap-1.5 text-xs">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-slate-500">Varian aktif:</span>
+                    <span className="font-extrabold text-slate-900 bg-white px-2 py-0.5 rounded border border-yellow-300">
+                      {currentVariant.size} • {currentVariant.color}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 font-bold text-slate-700">
+                    <span>Stok saat ini:</span>
+                    <span className={`font-black ${currentStock === 0 ? 'text-rose-600' : currentStock <= minStock ? 'text-amber-600' : 'text-emerald-700'}`}>
+                      {currentStock} pcs
+                    </span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1 font-bold text-slate-700">
-                  <span>Stok saat ini:</span>
-                  <span className={`font-black ${currentStock === 0 ? 'text-rose-600' : currentStock <= minStock ? 'text-amber-600' : 'text-emerald-700'}`}>
-                    {currentStock} pcs
-                  </span>
-                </div>
+
+                {/* Visual Barcode Display (Rendered 100% locally via SVG, never 403 error) */}
+                {(currentVariant.barcode || currentVariant.sku || activeProduct.sku) && (
+                  <div className="pt-1.5 border-t border-yellow-200/80 flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1">
+                      <Barcode className="w-3.5 h-3.5 text-amber-700" />
+                      <span>Barcode:</span>
+                    </span>
+                    <ProductBarcode 
+                      value={currentVariant.barcode || currentVariant.sku || activeProduct.sku || ''} 
+                      height={28}
+                      width={1.2}
+                    />
+                  </div>
+                )}
               </div>
 
               {/* Action Type (3 Compact Tabs) */}

@@ -426,7 +426,7 @@ function DashboardView() {
                 title="Segarkan / Refresh data stok real-time sekarang"
               >
                 <RefreshCw className={`w-3.5 h-3.5 text-amber-800 ${isRefreshing ? 'animate-spin' : ''}`} />
-                <span>{isRefreshing ? 'Sinkron...' : 'Refresh'}</span>
+                <span>{isRefreshing ? 'Memuat...' : 'Refresh'}</span>
               </button>
 
               {/* Ekspor CSV Button */}

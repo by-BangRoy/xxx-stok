@@ -881,6 +881,11 @@ app.post('/api/reset-demo', (req, res) => {
   return res.json({ success: true, message: 'Data demo telah direset' });
 });
 
+// Explicitly return JSON 404 for any unmatched /api/* requests so Vite HTML middleware doesn't serve index.html
+app.all('/api/*', (req, res) => {
+  res.status(404).json({ error: 'Endpoint API tidak ditemukan', path: req.path });
+});
+
 // Create HTTP server
 const server = http.createServer(app);
 

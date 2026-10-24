@@ -125,6 +125,19 @@ function getInitialDeviceProfile() {
   return { deviceId, deviceName, operatorName };
 }
 
+async function safeParseJson<T = any>(res: Response | null | undefined): Promise<T | null> {
+  if (!res || !res.ok) return null;
+  const contentType = res.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    return null;
+  }
+  try {
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
 export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Initialize with local cache or INITIAL_PRODUCTS so stock is NEVER empty on initial entry or login
   const [products, setProducts] = useState<Product[]>(() => {
@@ -252,9 +265,9 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pin: inputPin }),
-      });
-      const data = await res.json();
-      if (data.success) {
+      }).catch(() => null);
+      const data = await safeParseJson<{ success: boolean; message?: string }>(res);
+      if (data && data.success) {
         setIsAuthenticated(true);
         if (typeof window !== 'undefined') {
           sessionStorage.setItem('stz_unlocked', 'true');
@@ -262,23 +275,25 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         }
         playChime('sale');
         return { success: true };
-      } else {
+      } else if (data && !data.success) {
         playChime('alert');
         return { success: false, error: 'PIN yang Anda masukkan salah' };
       }
-    } catch (err) {
+    } catch {
       // Local fallback
-      if (inputPin === settings.securityPin) {
-        setIsAuthenticated(true);
-        if (typeof window !== 'undefined') {
-          sessionStorage.setItem('stz_unlocked', 'true');
-          localStorage.setItem('stz_unlocked', 'true');
-        }
-        playChime('sale');
-        return { success: true };
-      }
-      return { success: false, error: 'PIN tidak sesuai' };
     }
+
+    // Local fallback
+    if (inputPin === settings.securityPin) {
+      setIsAuthenticated(true);
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('stz_unlocked', 'true');
+        localStorage.setItem('stz_unlocked', 'true');
+      }
+      playChime('sale');
+      return { success: true };
+    }
+    return { success: false, error: 'PIN tidak sesuai' };
   };
 
   const lockApp = () => {
@@ -319,68 +334,68 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     if (manual) setIsRefreshing(true);
     try {
       const [resInv, resLogs, resSettings, resDevices] = await Promise.all([
-        fetch('/api/inventory'),
-        fetch('/api/logs?limit=50'),
-        fetch('/api/settings'),
+        fetch('/api/inventory').catch(() => null),
+        fetch('/api/logs?limit=50').catch(() => null),
+        fetch('/api/settings').catch(() => null),
         fetch('/api/devices').catch(() => null),
       ]);
-      if (resInv.ok) {
-        const invData = await resInv.json();
-        if (Array.isArray(invData.products)) {
-          const incoming: Product[] = invData.products;
-          setProducts(prev => {
-            if (incoming.length === 0) {
-              if (typeof window !== 'undefined') {
-                localStorage.removeItem('stz_saved_products');
-              }
-              return [];
+
+      const invData = await safeParseJson<{ products: Product[] }>(resInv);
+      if (invData && Array.isArray(invData.products)) {
+        const incoming: Product[] = invData.products;
+        setProducts(prev => {
+          if (incoming.length === 0) {
+            if (typeof window !== 'undefined') {
+              localStorage.removeItem('stz_saved_products');
             }
-            const changed =
-              prev.length !== incoming.length ||
-              prev.some((p) => {
-                const inc = incoming.find((item) => item.id === p.id);
-                if (!inc) return true;
-                if (inc.name !== p.name) return true;
-                if (inc.category !== p.category) return true;
-                if (inc.sku !== p.sku) return true;
-                if (inc.location !== p.location) return true;
-                if (inc.description !== p.description) return true;
-                if (inc.imageUrl !== p.imageUrl) return true;
-                if (inc.totalStock !== p.totalStock) return true;
-                if (inc.updatedAt !== p.updatedAt) return true;
-                if (inc.variants.length !== p.variants.length) return true;
-                return inc.variants.some((iv, idx) => {
-                  const pv = p.variants[idx];
-                  if (!pv) return true;
-                  return (
-                    iv.stock !== pv.stock ||
-                    iv.size !== pv.size ||
-                    iv.color !== pv.color ||
-                    iv.sku !== pv.sku ||
-                    iv.price !== pv.price ||
-                    iv.minStock !== pv.minStock
-                  );
-                });
+            return [];
+          }
+          const changed =
+            prev.length !== incoming.length ||
+            prev.some((p) => {
+              const inc = incoming.find((item) => item.id === p.id);
+              if (!inc) return true;
+              if (inc.name !== p.name) return true;
+              if (inc.category !== p.category) return true;
+              if (inc.sku !== p.sku) return true;
+              if (inc.location !== p.location) return true;
+              if (inc.description !== p.description) return true;
+              if (inc.imageUrl !== p.imageUrl) return true;
+              if (inc.totalStock !== p.totalStock) return true;
+              if (inc.updatedAt !== p.updatedAt) return true;
+              if (inc.variants.length !== p.variants.length) return true;
+              return inc.variants.some((iv, idx) => {
+                const pv = p.variants[idx];
+                if (!pv) return true;
+                return (
+                  iv.stock !== pv.stock ||
+                  iv.size !== pv.size ||
+                  iv.color !== pv.color ||
+                  iv.sku !== pv.sku ||
+                  iv.price !== pv.price ||
+                  iv.minStock !== pv.minStock
+                );
               });
-            if (changed || prev.length === 0) {
-              const mapped = incoming.map((p) => ({
-                ...p,
-                variants: p.variants.map((v) => ({ ...v })),
-              }));
-              if (typeof window !== 'undefined') {
-                try {
-                  localStorage.setItem('stz_saved_products', JSON.stringify(mapped));
-                } catch (e) {}
-              }
-              return mapped;
+            });
+          if (changed || prev.length === 0) {
+            const mapped = incoming.map((p) => ({
+              ...p,
+              variants: p.variants.map((v) => ({ ...v })),
+            }));
+            if (typeof window !== 'undefined') {
+              try {
+                localStorage.setItem('stz_saved_products', JSON.stringify(mapped));
+              } catch (e) {}
             }
-            return prev;
-          });
-        }
+            return mapped;
+          }
+          return prev;
+        });
       }
-      if (resLogs.ok) {
-        const logsData = await resLogs.json();
-        const logsList = logsData.logs || [];
+
+      const logsData = await safeParseJson<{ logs: StockLog[] }>(resLogs);
+      if (logsData && Array.isArray(logsData.logs)) {
+        const logsList = logsData.logs;
         setStockLogs(logsList);
         if (typeof window !== 'undefined' && logsList.length > 0) {
           try {
@@ -388,29 +403,28 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           } catch (e) {}
         }
       }
-      if (resSettings.ok) {
-        const settingsData = await resSettings.json();
-        if (settingsData.settings) {
-          setSettings(settingsData.settings);
-          if (typeof window !== 'undefined') {
-            localStorage.setItem('stz_cached_settings', JSON.stringify(settingsData.settings));
-          }
+
+      const settingsData = await safeParseJson<{ settings: AppSettings }>(resSettings);
+      if (settingsData && settingsData.settings) {
+        setSettings(settingsData.settings);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('stz_cached_settings', JSON.stringify(settingsData.settings));
         }
       }
-      if (resDevices && resDevices.ok) {
-        const devicesData = await resDevices.json();
-        if (devicesData && Array.isArray(devicesData.devices)) {
-          setConnectedDevices(devicesData.devices);
-          if (typeof devicesData.count === 'number') {
-            setConnectedDevicesCount(devicesData.count);
-          }
+
+      const devicesData = await safeParseJson<{ count?: number; devices?: DeviceInfo[] }>(resDevices);
+      if (devicesData && Array.isArray(devicesData.devices)) {
+        setConnectedDevices(devicesData.devices);
+        if (typeof devicesData.count === 'number') {
+          setConnectedDevicesCount(devicesData.count);
         }
       }
+
       if (manual) {
         playChime('sale');
       }
     } catch (err) {
-      console.error('Failed to refresh data from server:', err);
+      console.warn('Refresh data from server status:', err);
     } finally {
       if (manual) {
         setTimeout(() => setIsRefreshing(false), 500);

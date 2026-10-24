@@ -93,7 +93,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   }`} />
                 </span>
                 <span className="hidden md:inline">
-                  {connectionStatus === 'connected' ? 'Sinkron:' : 'Menghubungkan:'}
+                  {connectionStatus === 'connected' ? 'Perangkat:' : 'Menghubungkan:'}
                 </span>
                 <span className="font-bold text-[11px] sm:text-xs">
                   {connectedDevicesCount} <span className="hidden xs:inline">Online</span>
@@ -121,7 +121,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 title="Segarkan / Refresh Data Stok Real-Time"
               >
                 <RefreshCw className={`w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-400 ${isRefreshing ? 'animate-spin' : ''}`} />
-                <span className="hidden xs:inline">{isRefreshing ? 'Sinkron...' : 'Refresh'}</span>
+                <span className="hidden xs:inline">{isRefreshing ? 'Memuat...' : 'Refresh'}</span>
               </button>
 
               {/* Sound Toggle */}

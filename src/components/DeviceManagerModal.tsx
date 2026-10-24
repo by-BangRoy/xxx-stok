@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import QRCode from 'qrcode';
 import { useInventory } from '../context/InventoryContext.tsx';
 import { 
   Smartphone, 
@@ -22,7 +23,10 @@ import {
   MessageSquare,
   Share2,
   Camera,
-  CheckCircle2
+  CheckCircle2,
+  Download,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { DeviceInfo } from '../types/inventory.ts';
 
@@ -51,6 +55,7 @@ export const DeviceManagerModal: React.FC<DeviceManagerModalProps> = ({
   const [operatorName, setOperatorName] = useState(currentDevice.operatorName);
   const [isSaved, setIsSaved] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [showUrl, setShowUrl] = useState(false);
   const [isRefreshingDevices, setIsRefreshingDevices] = useState(false);
   const [localDevices, setLocalDevices] = useState<DeviceInfo[]>([]);
 
@@ -77,9 +82,10 @@ export const DeviceManagerModal: React.FC<DeviceManagerModalProps> = ({
     setIsRefreshingDevices(true);
     try {
       const res = await fetch('/api/devices');
-      if (res.ok) {
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
         const data = await res.json();
-        if (data.devices && Array.isArray(data.devices)) {
+        if (data && data.devices && Array.isArray(data.devices)) {
           setLocalDevices(data.devices);
         }
       }
@@ -90,23 +96,82 @@ export const DeviceManagerModal: React.FC<DeviceManagerModalProps> = ({
     }
   };
 
-  if (!isOpen) return null;
-
-  // Determine clean public base URL for other devices / QR Code
-  const getCleanAppUrl = (): string => {
+  // Determine URLs for multi-device access
+  const getPublicShareUrl = (): string => {
     if (typeof window === 'undefined') return 'https://stz-fashion-stok.ai.studio';
     try {
-      if (window.location.origin && window.location.origin !== 'null') {
-        return `${window.location.origin}${window.location.pathname}`;
+      const origin = window.location.origin;
+      const pathname = window.location.pathname || '/';
+      // In Google Cloud Run / AI Studio, ais-dev-* requires developer Google account auth (causes 403 for other devices).
+      // ais-pre-* is the publicly shared preview URL designed for all devices.
+      if (origin && origin.includes('ais-dev-')) {
+        return `${origin.replace('ais-dev-', 'ais-pre-')}${pathname}`;
       }
-      return window.location.href;
+      return `${origin}${pathname}`;
     } catch {
-      return window.location.href || 'https://stz-fashion-stok.ai.studio';
+      return window.location.href;
     }
   };
 
-  const currentUrl = getCleanAppUrl();
-  const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(currentUrl)}`;
+  const getDirectDevUrl = (): string => {
+    if (typeof window === 'undefined') return '';
+    try {
+      return `${window.location.origin}${window.location.pathname || '/'}`;
+    } catch {
+      return window.location.href;
+    }
+  };
+
+  const publicUrl = getPublicShareUrl();
+  const devUrl = getDirectDevUrl();
+
+  // Active URL automatically uses public preview URL (or direct dev fallback) to avoid 403 Google Auth errors
+  const activeUrl = useMemo(() => {
+    return publicUrl || devUrl;
+  }, [publicUrl, devUrl]);
+
+  // Generate QR Code locally via client-side SVG/Canvas data URL (0 external API calls -> NEVER 403)
+  const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('');
+  const [isGeneratingQr, setIsGeneratingQr] = useState<boolean>(true);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let isMounted = true;
+    setIsGeneratingQr(true);
+    QRCode.toDataURL(activeUrl, {
+      width: 280,
+      margin: 2,
+      color: {
+        dark: '#0f172a',
+        light: '#ffffff',
+      },
+      errorCorrectionLevel: 'M',
+    })
+      .then((dataUrl) => {
+        if (isMounted) {
+          setQrCodeDataUrl(dataUrl);
+          setIsGeneratingQr(false);
+        }
+      })
+      .catch((err) => {
+        console.warn('Local QR Code generation error:', err);
+        if (isMounted) setIsGeneratingQr(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeUrl, isOpen]);
+
+  const handleDownloadQr = () => {
+    if (!qrCodeDataUrl) return;
+    const a = document.createElement('a');
+    a.href = qrCodeDataUrl;
+    a.download = `stz-barcode-koneksi-hp-${Date.now()}.png`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
@@ -121,10 +186,10 @@ export const DeviceManagerModal: React.FC<DeviceManagerModalProps> = ({
   const handleCopyLink = () => {
     try {
       if (navigator.clipboard && window.isSecureContext) {
-        navigator.clipboard.writeText(currentUrl);
+        navigator.clipboard.writeText(activeUrl);
       } else {
         const textarea = document.createElement('textarea');
-        textarea.value = currentUrl;
+        textarea.value = activeUrl;
         textarea.style.position = 'fixed';
         textarea.style.left = '-9999px';
         document.body.appendChild(textarea);
@@ -142,7 +207,7 @@ export const DeviceManagerModal: React.FC<DeviceManagerModalProps> = ({
 
   const handleShareWhatsApp = () => {
     const store = settings.profile.storeName || 'STZ Stok';
-    const text = `Halo, berikut tautan sistem inventaris ${store}:\n${currentUrl}\n\nSilakan buka di HP untuk mulai mencatat stok barang keluar & masuk secara real-time.`;
+    const text = `Halo, berikut tautan sistem inventaris ${store}:\n${activeUrl}\n\nSilakan buka di HP untuk mulai mencatat stok barang keluar & masuk secara real-time.`;
     const targetUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
     const link = document.createElement('a');
     link.href = targetUrl;
@@ -155,7 +220,7 @@ export const DeviceManagerModal: React.FC<DeviceManagerModalProps> = ({
 
   const handleOpenNewTab = () => {
     const link = document.createElement('a');
-    link.href = currentUrl;
+    link.href = activeUrl;
     link.target = '_blank';
     link.rel = 'noopener noreferrer';
     document.body.appendChild(link);
@@ -212,6 +277,8 @@ export const DeviceManagerModal: React.FC<DeviceManagerModalProps> = ({
   });
 
   const totalOnlineCount = Math.max(connectedDevicesCount, allDisplayDevices.length);
+
+  if (!isOpen) return null;
 
   return (
     <div 
@@ -458,22 +525,46 @@ export const DeviceManagerModal: React.FC<DeviceManagerModalProps> = ({
               {/* Main Hub Card */}
               <div className="bg-gradient-to-br from-amber-500/10 via-yellow-500/5 to-white border border-amber-200/90 rounded-2xl p-4 sm:p-5 shadow-xs">
                 <div className="flex flex-col md:flex-row items-center md:items-start gap-6">
-                  {/* Kolom Kiri: QR Code Card */}
+                  {/* Kolom Kiri: QR Code Card (Generated locally via client-side SVG/Canvas data URL -> 0% 403 risk) */}
                   <div className="w-full sm:w-auto flex flex-col items-center shrink-0">
                     <div className="p-3.5 bg-white rounded-2xl shadow-md border-2 border-amber-300 ring-4 ring-amber-100/70 flex flex-col items-center">
-                      <img 
-                        src={qrCodeUrl} 
-                        alt="QR Code Buka di HP" 
-                        className="w-40 h-40 object-contain rounded-xl"
-                        loading="lazy"
-                      />
-                      <div className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 text-amber-950 text-[11px] font-black border border-amber-300">
-                        <Camera className="w-3.5 h-3.5 text-amber-700" />
-                        <span>Scan Kamera HP</span>
+                      {isGeneratingQr ? (
+                        <div className="w-44 h-44 flex flex-col items-center justify-center bg-slate-50 rounded-xl gap-2 text-slate-500">
+                          <RefreshCw className="w-6 h-6 animate-spin text-amber-600" />
+                          <span className="text-[11px] font-bold">Membuat Barcode...</span>
+                        </div>
+                      ) : qrCodeDataUrl ? (
+                        <img 
+                          src={qrCodeDataUrl} 
+                          alt="Barcode QR Code Buka di HP" 
+                          className="w-44 h-44 object-contain rounded-xl"
+                        />
+                      ) : (
+                        <div className="w-44 h-44 flex items-center justify-center bg-slate-100 rounded-xl text-xs text-slate-500">
+                          Gagal memuat barcode
+                        </div>
+                      )}
+
+                      <div className="mt-2.5 flex items-center gap-2">
+                        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-100 text-amber-950 text-[10px] font-black border border-amber-300">
+                          <Camera className="w-3.5 h-3.5 text-amber-700" />
+                          <span>Scan Kamera HP</span>
+                        </div>
+                        {qrCodeDataUrl && (
+                          <button
+                            type="button"
+                            onClick={handleDownloadQr}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-extrabold active:scale-95 transition-all cursor-pointer shadow-xs"
+                            title="Unduh gambar barcode QR (PNG)"
+                          >
+                            <Download className="w-3 h-3 text-amber-400" />
+                            <span>Simpan</span>
+                          </button>
+                        )}
                       </div>
                     </div>
-                    <span className="text-[11px] text-slate-500 mt-2 text-center max-w-[210px] leading-tight">
-                      Arahkan kamera smartphone ke kode ini untuk langsung membuka sistem
+                    <span className="text-[11px] text-slate-500 mt-2 text-center max-w-[220px] leading-tight">
+                      Arahkan kamera HP kasir ke barcode ini untuk langsung membuka katalog stok
                     </span>
                   </div>
 
@@ -488,50 +579,79 @@ export const DeviceManagerModal: React.FC<DeviceManagerModalProps> = ({
                         Sambungkan Smartphone Kasir & Gudang
                       </h4>
                       <p className="text-xs text-slate-600 leading-relaxed mt-1">
-                        Buka sistem kasir di HP staf kasir atau staf gudang tanpa perlu mengunduh aplikasi di Play Store atau App Store. Semua data stok langsung terhubung otomatis seketika.
+                        Buka sistem kasir di smartphone staf kasir atau staf gudang tanpa perlu unduh aplikasi. Semua data stok langsung terhubung otomatis seketika.
                       </p>
                     </div>
 
-                    {/* URL Card Display */}
+                    {/* URL Card Display - Tautan Tersembunyi Demi Privasi & Kerapian */}
                     <div className="space-y-1.5">
-                      <label className="block text-[11px] font-bold text-slate-700">
-                        Tautan Langsung Aplikasi Toko:
-                      </label>
+                      <div className="flex items-center justify-between">
+                        <label className="block text-[11px] font-bold text-slate-700">
+                          Tautan Privat Toko:
+                        </label>
+                        <span className="text-[10px] font-extrabold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300">
+                          ✓ Siap Disalin &amp; Dibagikan
+                        </span>
+                      </div>
                       <div 
                         onClick={handleCopyLink}
-                        className="flex items-center justify-between bg-white border border-yellow-300 hover:border-amber-400 rounded-xl p-2 pl-3.5 shadow-xs cursor-pointer transition-colors group"
+                        className="flex items-center justify-between bg-white border border-yellow-300 hover:border-amber-400 rounded-xl p-2.5 pl-3.5 shadow-xs cursor-pointer transition-colors group"
                         title="Klik untuk salin tautan toko"
                       >
-                        <div className="flex items-center gap-2 overflow-hidden flex-1">
-                          <Lock className="w-4 h-4 text-amber-600 shrink-0" />
-                          <span className="text-xs font-bold text-slate-800 truncate">
-                            Tautan Privat Toko STZ Stok
-                          </span>
-                          <span className="hidden sm:inline-block text-[10px] font-bold bg-amber-100 text-amber-950 px-2 py-0.5 rounded-md border border-amber-300 shrink-0">
-                            Terproteksi
-                          </span>
+                        <div className="flex items-center gap-2.5 overflow-hidden flex-1 min-w-0">
+                          <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center shrink-0 border border-amber-300">
+                            <Lock className="w-4 h-4 text-amber-700" />
+                          </div>
+                          <div className="flex flex-col min-w-0 pr-1">
+                            {showUrl ? (
+                              <span className="text-xs font-bold text-slate-800 truncate font-mono">
+                                {activeUrl}
+                              </span>
+                            ) : (
+                              <span className="text-xs sm:text-sm font-black text-slate-800 tracking-widest select-none font-mono">
+                                ••••••••••••••••••••••••••••
+                              </span>
+                            )}
+                            <span className="text-[10px] text-slate-500 font-medium truncate">
+                              {showUrl ? 'Tautan langsung preview publik' : 'Tautan terenkripsi & tersambung otomatis'}
+                            </span>
+                          </div>
                         </div>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleCopyLink();
-                          }}
-                          className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-extrabold flex items-center gap-1.5 transition-all active:scale-95 shrink-0 ml-2 cursor-pointer shadow-xs"
-                          title="Salin tautan ke clipboard"
-                        >
-                          {copied ? (
-                            <>
-                              <Check className="w-3.5 h-3.5 text-emerald-400 stroke-[3]" />
-                              <span className="text-emerald-300">Tersalin!</span>
-                            </>
-                          ) : (
-                            <>
-                              <Copy className="w-3.5 h-3.5 text-amber-400" />
-                              <span>Salin URL</span>
-                            </>
-                          )}
-                        </button>
+
+                        <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setShowUrl(!showUrl);
+                            }}
+                            className="p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
+                            title={showUrl ? 'Sembunyikan URL' : 'Tampilkan URL'}
+                          >
+                            {showUrl ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCopyLink();
+                            }}
+                            className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-extrabold flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer shadow-xs"
+                            title="Salin tautan ke clipboard"
+                          >
+                            {copied ? (
+                              <>
+                                <Check className="w-3.5 h-3.5 text-emerald-400 stroke-[3]" />
+                                <span className="text-emerald-300">Tersalin!</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3.5 h-3.5 text-amber-400" />
+                                <span>Salin URL</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
                       </div>
                     </div>
 
